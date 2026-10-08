@@ -1,0 +1,6 @@
+{
+  "name": "NMDC AI & Digital Innovation Portal",
+  "description": "Unified platform for NMDC executives, technology partners and vendors to identify problem statements, propose technical solutions, execute pilots and track innovation projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

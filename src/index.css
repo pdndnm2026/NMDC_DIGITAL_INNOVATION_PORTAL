@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  /* Increased root font size so all rem-based typography scales up across the entire portal */
+  font-size: 19px;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #1e293b;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure clean light theme inputs and cards */
+input, select, textarea {
+  font-size: 0.95rem;
+}
+
+/* Boost small text readability across portal content */
+.text-\[10px\] {
+  font-size: 0.72rem !important;
+}
+
+.text-\[11px\] {
+  font-size: 0.78rem !important;
+}
+
