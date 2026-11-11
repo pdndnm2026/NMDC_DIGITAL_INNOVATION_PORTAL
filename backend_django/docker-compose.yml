@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nmdc_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: nmdc_portal_db
+      POSTGRES_USER: nmdc_admin
+      POSTGRES_PASSWORD: nmdc_secure_pwd_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nmdc_admin -d nmdc_portal_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nmdc_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nmdc_backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: nmdc_portal.settings
+      DJANGO_DEBUG: "True"
+      POSTGRES_DB: nmdc_portal_db
+      POSTGRES_USER: nmdc_admin
+      POSTGRES_PASSWORD: nmdc_secure_pwd_2025
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+
+volumes:
+  postgres_data:
+  media_volume:

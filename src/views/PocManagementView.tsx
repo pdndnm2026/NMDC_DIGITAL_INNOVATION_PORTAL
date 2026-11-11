@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PocRecord, UserRole, User } from '../types/index.js';
+import { PocRecord, UserRole, User, PocStatus, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
 import { 
   Layers, 
   Search, 
@@ -7,52 +7,60 @@ import {
   CheckCircle2, 
   Clock, 
   AlertTriangle, 
-  XCircle, 
-  Building, 
+  Building2, 
   IndianRupee, 
-  Cpu, 
-  TrendingUp, 
-  UserCheck, 
   ArrowRight,
-  Sparkles,
-  Edit2
+  ShieldCheck, 
+  Calendar, 
+  FileText, 
+  Printer, 
+  X, 
+  Upload, 
+  Plus,
+  MapPin
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface PocManagementViewProps {
   currentRole: UserRole;
   currentUser: User | null;
+  activeComplexCode?: MineComplexCode | 'ALL';
   onRefreshData?: () => void;
 }
 
 export const PocManagementView: React.FC<PocManagementViewProps> = ({
   currentRole,
   currentUser,
+  activeComplexCode = 'ALL',
+  onRefreshData,
 }) => {
   const [pocs, setPocs] = useState<PocRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSite, setSelectedSite] = useState('All');
-  const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedStatus, setSelectedStatus] = useState<string>('All');
+  const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
   const [search, setSearch] = useState('');
   const [selectedPocDetail, setSelectedPocDetail] = useState<PocRecord | null>(null);
 
-  // Status updating state
-  const [updatingPocId, setUpdatingPocId] = useState<string | null>(null);
-  const [newStatus, setNewStatus] = useState<PocRecord['status']>('Success Criteria Met');
-  const [newProgress, setNewProgress] = useState<number>(100);
-  const [resultsNotes, setResultsNotes] = useState('');
-  const [recommendation, setRecommendation] = useState('Recommend Full Pilot Phase on remaining 14 Dumpers.');
+  // Status transition state
+  const [updatingPoc, setUpdatingPoc] = useState<PocRecord | null>(null);
+  const [targetStatus, setTargetStatus] = useState<PocStatus>('Approved');
+  const [progressPct, setProgressPct] = useState<number>(50);
+  const [actualResults, setActualResults] = useState('');
+  const [observations, setObservations] = useState('');
+  const [recommendations, setRecommendations] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     loadPocs();
-  }, [selectedSite, selectedStatus]);
+  }, [selectedStatus, selectedComplexFilter]);
 
   const loadPocs = async () => {
     setLoading(true);
     try {
-      const res = await fetchApi<{ success: boolean; data: PocRecord[] }>(
-        `/api/pocs?site=${selectedSite}&status=${selectedStatus}`
-      );
+      const url = selectedComplexFilter !== 'ALL'
+        ? `/api/pocs?status=${selectedStatus}&mineComplex=${selectedComplexFilter}`
+        : `/api/pocs?status=${selectedStatus}`;
+      const res = await fetchApi<{ success: boolean; data: PocRecord[] }>(url);
       if (res.success && res.data) {
         setPocs(res.data);
       }
@@ -63,436 +71,524 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
     }
   };
 
-  const handleUpdateStatus = async (pocId: string) => {
+  const handleSavePocStatus = async () => {
+    if (!updatingPoc) return;
+    setSubmitting(true);
     try {
-      const res = await fetchApi<{ success: boolean; data: PocRecord }>(`/api/pocs/${pocId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: newStatus,
-          progressPct: newProgress,
-          resultsSummary: resultsNotes,
-          recommendation,
-        }),
-      });
+      const res = await fetchApi<{ success: boolean; data: PocRecord }>(
+        `/api/pocs/${updatingPoc.id}/status`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: targetStatus,
+            progressPct,
+            actualResults,
+            observations,
+            recommendations,
+          }),
+        }
+      );
 
       if (res.success) {
-        setPocs(pocs.map((p) => (p.id === pocId ? res.data : p)));
-        setUpdatingPocId(null);
-        if (selectedPocDetail?.id === pocId) {
+        setPocs(pocs.map((p) => (p.id === updatingPoc.id ? res.data : p)));
+        setUpdatingPoc(null);
+        if (selectedPocDetail?.id === updatingPoc.id) {
           setSelectedPocDetail(res.data);
         }
+        if (onRefreshData) onRefreshData();
       }
     } catch (e: any) {
       alert(`Update error: ${e.message}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const sites = [
-    'All',
-    'Bailadila Deposit 5',
-    'Bailadila Deposit 14',
-    'Donimalai Mine',
-    'Kumaraswamy Mine',
-    'Pellet Plant Vizag',
+  const pocStatuses: PocStatus[] = [
+    'Proposed',
+    'Under Approval',
+    'Approved',
+    'Scheduled',
+    'Under Trial',
+    'Evaluation',
+    'Successful',
+    'Unsuccessful',
+    'Closed',
   ];
 
-  const statuses = [
-    'All',
-    'In Evaluation',
-    'Active Bench Testing',
-    'Field Trial Underway',
-    'Success Criteria Met',
-    'Approved for Pilot',
-    'Discontinued',
-  ];
-
-  const filtered = pocs.filter((poc) => {
+  const filtered = pocs.filter((p) => {
+    if (selectedComplexFilter !== 'ALL' && p.mineComplexCode && p.mineComplexCode !== selectedComplexFilter) return false;
+    if (selectedStatus !== 'All' && p.status !== selectedStatus) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       return (
-        poc.title.toLowerCase().includes(q) ||
-        poc.pocCode.toLowerCase().includes(q) ||
-        poc.vendorName.toLowerCase().includes(q) ||
-        poc.equipmentTarget.toLowerCase().includes(q) ||
-        poc.responsibleOfficer.toLowerCase().includes(q)
+        p.pocCode.toLowerCase().includes(q) ||
+        p.vendorName.toLowerCase().includes(q) ||
+        p.problemStatementTitle.toLowerCase().includes(q) ||
+        p.trialLocation.toLowerCase().includes(q)
       );
     }
     return true;
   });
 
-  const getStatusBadge = (status: PocRecord['status']) => {
-    switch (status) {
-      case 'Success Criteria Met':
-      case 'Approved for Pilot':
-        return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-      case 'Field Trial Underway':
-      case 'Active Bench Testing':
-        return 'text-blue-700 bg-blue-50 border-blue-200';
-      case 'In Evaluation':
-        return 'text-amber-700 bg-amber-50 border-amber-200';
-      case 'Discontinued':
-        return 'text-rose-700 bg-rose-50 border-rose-200';
-      default:
-        return 'text-slate-700 bg-slate-100 border-slate-200';
-    }
-  };
+  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
+    <div className="space-y-6 pb-16">
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-mono text-blue-700 font-semibold tracking-wider uppercase">
-            STAGE 4 IMPLEMENTATION GOVERNANCE
-          </span>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-0.5">
-            PoC (Proof of Concept) Management
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-teal-800 font-bold uppercase tracking-wider bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+              PROOF OF CONCEPT (PoC) MANAGEMENT · SECTION 14
+            </span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-500 font-medium text-xs">
+              {selectedComplexFilter === 'ALL' ? 'All Complexes' : activeComplexObj?.name}: {filtered.length} Trials
+            </span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
+            NMDC Field Trials & Proof of Concept (PoC) Management
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Rigorous tracking of baseline vs. target metrics, sensor trials, and pilot approvals across NMDC production complexes.
+            Stage Progression: Proposed → Under Approval → Approved → Scheduled → Under Trial → Evaluation → Successful / Unsuccessful → Closed.
           </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="text-right hidden sm:block">
-            <span className="text-[11px] text-slate-400 block">Fast-Track Pilot Sanctions</span>
-            <span className="text-xs font-bold text-slate-700">Go/No-Go Decision Gates</span>
-          </div>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search PoC code, equipment, vendor, officer..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
+      {/* Complex Filter Pills */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => setSelectedComplexFilter('ALL')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+            selectedComplexFilter === 'ALL'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>All 4 Complexes</span>
+        </button>
 
-          <div>
-            <select
-              value={selectedSite}
-              onChange={(e) => setSelectedSite(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+          const isActive = selectedComplexFilter === complex.code;
+          return (
+            <button
+              key={complex.code}
+              onClick={() => setSelectedComplexFilter(complex.code)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                isActive
+                  ? 'bg-teal-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
             >
-              {sites.map((s) => (
-                <option key={s} value={s}>
-                  Site Complex: {s}
-                </option>
-              ))}
-            </select>
-          </div>
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{complex.name}</span>
+            </button>
+          );
+        })}
+      </div>
 
-          <div>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            >
-              {statuses.map((st) => (
-                <option key={st} value={st}>
-                  Stage Status: {st}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-          <span>Active PoCs Tracked: <strong>{filtered.length}</strong></span>
-          <span className="font-mono">
-            Total Sanctioned PoC Budget: ₹ {(filtered.reduce((a, b) => a + b.cost, 0) / 100000).toFixed(1)} Lakhs
+      {/* Workflow Tabs / Quick Filters */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => setSelectedStatus('All')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+            selectedStatus === 'All'
+              ? 'bg-blue-700 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <span>All Stages</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600">
+            {pocs.length}
           </span>
-        </div>
+        </button>
+
+        {pocStatuses.map((st) => {
+          const count = pocs.filter((p) => p.status === st).length;
+          const isActive = selectedStatus === st;
+          return (
+            <button
+              key={st}
+              onClick={() => setSelectedStatus(st)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                isActive
+                  ? 'bg-blue-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <span>{st}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* PoC Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filtered.map((poc) => (
-          <div
-            key={poc.id}
-            className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-blue-500 transition-all flex flex-col justify-between space-y-4"
-          >
-            <div className="space-y-3">
-              {/* Header meta */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+      {filtered.length === 0 ? (
+        <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-2">
+          <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="font-semibold text-slate-700 text-sm">
+            {pocs.length === 0
+              ? 'No PoC records available.'
+              : selectedComplexFilter !== 'ALL'
+              ? 'No PoC records available for this complex.'
+              : 'No records available.'}
+          </p>
+          <p className="text-slate-400 text-xs">
+            Field trials will be registered once technical evaluation recommends a Proof of Concept.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map((poc) => {
+            const isSuccessful = poc.status === 'Successful';
+            const isUnderTrial = poc.status === 'Under Trial';
+
+            return (
+              <div
+                key={poc.id}
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between p-5 space-y-4"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                      {poc.pocCode}
+                    </span>
+
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                        isSuccessful
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : isUnderTrial
+                          ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                          : 'bg-purple-50 text-purple-800 border-purple-200'
+                      }`}
+                    >
+                      {poc.status} ({poc.progressPct}%)
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase block">
+                      {poc.problemStatementCode} {poc.mineComplexCode ? `· ${poc.mineComplexCode}` : ''}
+                    </span>
+                    <h3 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1 mt-0.5">
+                      {poc.problemStatementTitle}
+                    </h3>
+                  </div>
+
+                  {/* PoC Metrics Table */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Participating Vendor:</span>
+                      <strong className="text-slate-800 truncate max-w-[170px]">{poc.vendorName}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Trial Location:</span>
+                      <span className="text-slate-700 truncate max-w-[170px]">{poc.trialLocation}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Equipment / Process:</span>
+                      <span className="text-slate-700 truncate max-w-[170px]">{poc.equipmentProcess}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Trial Cost:</span>
+                      <span className="font-mono font-bold text-slate-800">₹ {(poc.trialCost / 100000).toFixed(2)} Lakhs</span>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] text-slate-500 font-medium">
+                      <span>Field Verification Progress</span>
+                      <span>{poc.progressPct}%</span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-teal-600 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${poc.progressPct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">
+                    <strong>Scope:</strong> {poc.pocScope}
+                  </p>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    onClick={() => setSelectedPocDetail(poc)}
+                    className="text-blue-700 hover:text-blue-800 font-semibold text-xs flex items-center gap-1"
+                  >
+                    <span>View PoC Evaluation Report</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  {(currentRole === 'poc_committee' || currentRole === 'approving_authority' || currentRole === 'admin') && (
+                    <button
+                      onClick={() => {
+                        setUpdatingPoc(poc);
+                        setTargetStatus(poc.status);
+                        setProgressPct(poc.progressPct);
+                        setActualResults(poc.actualResults || '');
+                        setObservations(poc.observations || '');
+                        setRecommendations(poc.recommendations || '');
+                      }}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs"
+                    >
+                      Update Stage
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Detailed PoC Evaluation Report Modal */}
+      {selectedPocDetail && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden text-xs text-slate-800 animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-blue-700 text-sm">{poc.pocCode}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-slate-500">{poc.problemStatementCode}</span>
+                  <span className="font-mono text-teal-800 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                    {selectedPocDetail.pocCode}
+                  </span>
+                  <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    {selectedPocDetail.status}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="font-bold text-slate-800">{selectedPocDetail.vendorName}</span>
                 </div>
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${getStatusBadge(poc.status)}`}>
-                  {poc.status}
-                </span>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-1">
+                  Proof of Concept (PoC) Evaluation Report: {selectedPocDetail.problemStatementTitle}
+                </h2>
               </div>
-
-              {/* Title & Vendor */}
-              <div>
-                <h3 className="text-base font-bold text-slate-900 leading-snug">
-                  {poc.title}
-                </h3>
-                <span className="text-xs text-blue-700 font-semibold block mt-0.5">
-                  Technology Partner: {poc.vendorName}
-                </span>
-              </div>
-
-              {/* Objective */}
-              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                <strong>Objective:</strong> {poc.objective}
-              </p>
-
-              {/* Equipment, Site, Officer */}
-              <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600">
-                <div>
-                  <span className="text-slate-400 block">Equipment:</span>
-                  <strong className="text-slate-800">{poc.equipmentTarget}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Mine Complex:</span>
-                  <strong className="text-slate-800">{poc.siteComplex}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Responsible Officer:</span>
-                  <strong className="text-slate-800">{poc.responsibleOfficer}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">Duration / Cost:</span>
-                  <strong className="text-slate-800">{poc.durationWeeks} weeks · ₹ {(poc.cost / 100000).toFixed(1)} Lakhs</strong>
-                </div>
-              </div>
-
-              {/* Baseline vs Target Metrics */}
-              <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-semibold text-blue-950">
-                  <span>KPI Tracked: {poc.kpiName}</span>
-                  <span className="text-blue-700 font-mono">{poc.progressPct}% Complete</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="p-2 bg-white rounded-lg border border-blue-100">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block">BASELINE METRIC</span>
-                    <strong className="text-slate-700 font-mono text-xs">{poc.baselineMetric}</strong>
-                  </div>
-                  <div className="p-2 bg-white rounded-lg border border-blue-100">
-                    <span className="text-[10px] text-emerald-600 uppercase font-bold block">TARGET SUCCESS METRIC</span>
-                    <strong className="text-emerald-700 font-mono text-xs">{poc.targetMetric}</strong>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
-                  <div
-                    className="bg-blue-600 h-full rounded-full transition-all"
-                    style={{ width: `${poc.progressPct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Test results if available */}
-              {poc.testResultsSummary && (
-                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-900">
-                  <strong>Trial Findings:</strong> {poc.testResultsSummary}
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
               <button
-                type="button"
-                onClick={() => setSelectedPocDetail(poc)}
-                className="text-xs text-slate-600 hover:text-slate-900 font-medium"
+                onClick={() => setSelectedPocDetail(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                View Complete Dossier
-              </button>
-
-              {(currentRole === 'reviewer' || currentRole === 'admin' || currentRole === 'project_manager') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUpdatingPocId(poc.id);
-                    setNewStatus(poc.status);
-                    setNewProgress(poc.progressPct);
-                    setResultsNotes(poc.testResultsSummary || '');
-                    setRecommendation(poc.recommendationForPilot || '');
-                  }}
-                  className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold transition-colors"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Update Decision Gate</span>
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Decision Gate Update Modal */}
-      {updatingPocId && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 text-xs animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="font-bold text-slate-900 text-sm">Update PoC Decision Gate</h3>
-              <button onClick={() => setUpdatingPocId(null)} className="text-slate-400 hover:text-slate-700">
-                <XCircle className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">PoC Stage Status</label>
-                <select
-                  value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-900"
-                >
-                  <option value="Active Bench Testing">Active Bench Testing</option>
-                  <option value="Field Trial Underway">Field Trial Underway</option>
-                  <option value="Success Criteria Met">Success Criteria Met</option>
-                  <option value="Approved for Pilot">Approved for Pilot</option>
-                  <option value="Discontinued">Discontinued / No-Go</option>
-                </select>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+              {/* Parameters & Scope */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-slate-500 text-[11px] block">Trial Location:</span>
+                  <strong className="text-slate-800 block mt-0.5">{selectedPocDetail.trialLocation}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[11px] block">Equipment / Process:</span>
+                  <strong className="text-slate-800 block mt-0.5">{selectedPocDetail.equipmentProcess}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[11px] block">Trial Period:</span>
+                  <strong className="text-slate-800 block mt-0.5">{selectedPocDetail.trialPeriodWeeks} Weeks ({selectedPocDetail.startDate} to {selectedPocDetail.completionDate})</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[11px] block">Trial Sanction Cost:</span>
+                  <strong className="text-slate-800 font-mono block mt-0.5">₹ {(selectedPocDetail.trialCost / 100000).toFixed(2)} Lakhs</strong>
+                </div>
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Progress Percentage ({newProgress}%)</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={newProgress}
-                  onChange={(e) => setNewProgress(parseInt(e.target.value))}
-                  className="w-full"
-                />
+                <span className="font-bold text-slate-800 block mb-1">PoC Scope & Trial Objectives:</span>
+                <p className="text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-150 leading-relaxed">
+                  {selectedPocDetail.pocScope}
+                </p>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Field Test Findings & Metrics Achieved</label>
-                <textarea
-                  rows={2}
-                  value={resultsNotes}
-                  onChange={(e) => setResultsNotes(e.target.value)}
-                  placeholder="e.g. Achieved 94.6% anomaly detection accuracy on BH100S dumper #14 over 420 operating hours..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-900"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-1">Baseline Performance:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                    {selectedPocDetail.baselinePerformance}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-1">Expected Target Performance:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                    {selectedPocDetail.expectedPerformance}
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Recommendation for Pilot / Scale-Up</label>
-                <input
-                  type="text"
-                  value={recommendation}
-                  onChange={(e) => setRecommendation(e.target.value)}
-                  placeholder="e.g. Sanction full pilot expansion across Kirandul fleet..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-900"
-                />
+              {/* Committee Members & Responsibilities */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-800 block mb-2">NMDC PoC Committee Members:</span>
+                  {selectedPocDetail.nmdcCommitteeMembers && selectedPocDetail.nmdcCommitteeMembers.length > 0 ? (
+                    <ul className="space-y-1 text-slate-600">
+                      {selectedPocDetail.nmdcCommitteeMembers.map((m, i) => (
+                        <li key={i} className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                          <span>{m}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-slate-400 italic">Designated Mine Operations Committee</p>
+                  )}
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-800 block mb-2">Vendor Obligations & Responsibilities:</span>
+                  <p className="text-slate-600 leading-relaxed">
+                    {selectedPocDetail.vendorResponsibilities || 'Supply of trial instrumentation, setup, and performance logging.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Actual Results & Recommendations */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-1.5">
+                  Actual Trial Results, Committee Observations & Final Sanction
+                </h4>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-1">Actual Measured Results:</span>
+                  <p className="text-slate-700 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200 font-medium leading-relaxed">
+                    {selectedPocDetail.actualResults || 'Field trial in progress. Preliminary results pending.'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-1">PoC Committee Observations:</span>
+                  <p className="text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-150 leading-relaxed">
+                    {selectedPocDetail.observations || 'Trial verification underway per SOP.'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-1">Committee Recommendation for Full Commercial Rollout:</span>
+                  <p className="text-slate-800 bg-blue-50/50 p-3 rounded-xl border border-blue-200 font-bold leading-relaxed">
+                    {selectedPocDetail.recommendations || 'Recommended for evaluation completion.'}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
               <button
-                type="button"
-                onClick={() => setUpdatingPocId(null)}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-xl"
               >
-                Cancel
+                <Printer className="w-4 h-4 text-slate-600" />
+                <span>Print Formal PoC Report</span>
               </button>
+
               <button
-                type="button"
-                onClick={() => handleUpdateStatus(updatingPocId)}
-                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-semibold"
+                onClick={() => setSelectedPocDetail(null)}
+                className="px-4 py-2 bg-slate-800 text-white font-semibold rounded-xl"
               >
-                Record Decision Gate
+                Close Report
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Complete Dossier Modal */}
-      {selectedPocDetail && (
+      {/* Stage Transition Modal */}
+      {updatingPoc && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-5 text-xs animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div>
-                <span className="font-mono text-xs text-blue-700 font-bold block">
-                  {selectedPocDetail.pocCode} · DOSSIER
-                </span>
-                <h3 className="font-bold text-slate-900 text-base leading-snug">
-                  {selectedPocDetail.title}
-                </h3>
-              </div>
-              <button onClick={() => setSelectedPocDetail(null)} className="text-slate-400 hover:text-slate-700">
-                <XCircle className="w-5 h-5" />
-              </button>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-5 text-xs text-slate-800 animate-in zoom-in-95 duration-150 space-y-4">
+            <div>
+              <span className="font-mono text-teal-800 font-bold uppercase text-[10px] tracking-wider">
+                POC STAGE TRANSITION · SECTION 14
+              </span>
+              <h3 className="font-bold text-slate-900 text-base mt-0.5">
+                Update PoC Trial Stage: {updatingPoc.pocCode}
+              </h3>
             </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 rounded-xl text-slate-700">
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Vendor Partner</span>
-                  <strong className="text-slate-900">{selectedPocDetail.vendorName}</strong>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Site Complex</span>
-                  <strong className="text-slate-900">{selectedPocDetail.siteComplex}</strong>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Equipment</span>
-                  <strong className="text-slate-900">{selectedPocDetail.equipmentTarget}</strong>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">NMDC Officer</span>
-                  <strong className="text-slate-900">{selectedPocDetail.responsibleOfficer}</strong>
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">PoC Stage *</label>
+                <select
+                  value={targetStatus}
+                  onChange={(e) => setTargetStatus(e.target.value as PocStatus)}
+                  className="w-full border border-slate-300 rounded-xl p-2 font-bold text-slate-900 bg-white"
+                >
+                  {pocStatuses.map((st) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
-                <h4 className="font-bold text-slate-900 text-xs mb-1">PoC Objective & Verification Scope</h4>
-                <p className="text-slate-600 leading-relaxed bg-white border border-slate-200 p-3 rounded-lg">
-                  {selectedPocDetail.objective}
-                </p>
+                <label className="font-bold text-slate-700 block mb-1">Progress Percentage (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={progressPct}
+                  onChange={(e) => setProgressPct(parseInt(e.target.value) || 0)}
+                  className="w-full border border-slate-300 rounded-xl p-2 text-slate-900 font-bold"
+                />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-                  <span className="text-slate-500 font-semibold block">Baseline Reference</span>
-                  <p className="text-slate-800 font-mono font-bold">{selectedPocDetail.baselineMetric}</p>
-                </div>
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1">
-                  <span className="text-emerald-800 font-semibold block">Target Threshold</span>
-                  <p className="text-emerald-900 font-mono font-bold">{selectedPocDetail.targetMetric}</p>
-                </div>
-              </div>
-
-              {selectedPocDetail.testResultsSummary && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1">
-                  <span className="font-bold text-blue-950 block">Documented Test Results</span>
-                  <p className="text-blue-900 leading-relaxed">{selectedPocDetail.testResultsSummary}</p>
-                </div>
-              )}
-
-              {selectedPocDetail.recommendationForPilot && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1">
-                  <span className="font-bold text-amber-950 block">Pilot Scaling Recommendation</span>
-                  <p className="text-amber-900 leading-relaxed">{selectedPocDetail.recommendationForPilot}</p>
-                </div>
-              )}
             </div>
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Actual Measured Results</label>
+              <textarea
+                rows={2}
+                value={actualResults}
+                onChange={(e) => setActualResults(e.target.value)}
+                placeholder="Data, accuracy, MTBF, throughput results observed during trial..."
+                className="w-full border border-slate-300 rounded-xl p-2 text-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Committee Observations</label>
+              <textarea
+                rows={2}
+                value={observations}
+                onChange={(e) => setObservations(e.target.value)}
+                placeholder="Field inspection remarks, ambient conditions, sensor reliability..."
+                className="w-full border border-slate-300 rounded-xl p-2 text-slate-900"
+              />
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Final Recommendation for Commercial Sanction</label>
+              <textarea
+                rows={2}
+                value={recommendations}
+                onChange={(e) => setRecommendations(e.target.value)}
+                placeholder="Recommend for full mine rollout / keep on standby / close..."
+                className="w-full border border-slate-300 rounded-xl p-2 text-slate-900"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setSelectedPocDetail(null)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg"
+                onClick={() => setUpdatingPoc(null)}
+                className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-slate-700 font-semibold"
               >
-                Close Dossier
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleSavePocStatus}
+                className="px-4 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-lg shadow-2xs"
+              >
+                {submitting ? 'Updating...' : 'Save Stage Update'}
               </button>
             </div>
           </div>

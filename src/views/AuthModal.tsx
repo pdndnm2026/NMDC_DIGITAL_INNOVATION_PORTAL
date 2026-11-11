@@ -113,8 +113,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const creds: Record<UserRole, { email: string; name: string }> = {
       public: { email: 'public@citizen.in', name: 'Public User' },
       executive: { email: 'executive@nmdc.co.in', name: 'Dr. Amitabh Verma (GM - Mining)' },
+      dept_head: { email: 'depthead@nmdc.co.in', name: 'Shri P. C. Mahapatra (CGM - Mining)' },
+      approving_authority: { email: 'approver@nmdc.co.in', name: 'Shri D. K. Mohanty (ED - Technical)' },
       vendor: { email: 'vendor@miningtech.in', name: 'Ananya Deshmukh (MiningTech)' },
-      reviewer: { email: 'reviewer@nmdc.co.in', name: 'Shri S. K. Nayak (CGM - R&D)' },
+      tech_evaluator: { email: 'techeval@nmdc.co.in', name: 'Dr. S. K. Nayak (CGM - Technical Evaluation)' },
+      comm_evaluator: { email: 'commeval@nmdc.co.in', name: 'Shri R. Balasubramanian (GM - Commercial)' },
+      poc_committee: { email: 'poccomm@nmdc.co.in', name: 'Smt. Kavitha Reddy (DGM - Mine Operations)' },
       project_manager: { email: 'pm@nmdc.co.in', name: 'V. Rajeshwar Rao (DGM - Projects)' },
       admin: { email: 'admin@nmdc.co.in', name: 'Shri R. K. Sharma (ED - IT)' },
     };
@@ -211,10 +215,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => fastPersonaLogin('reviewer')}
+                    onClick={() => fastPersonaLogin('tech_evaluator')}
                     className="p-1.5 bg-white hover:bg-blue-100/60 border border-blue-200 rounded text-left font-medium text-blue-900 text-[11px] truncate"
                   >
-                    ⚖️ Reviewer (Shri Nayak)
+                    ⚖️ Tech Evaluator (Dr. Nayak)
                   </button>
                   <button
                     type="button"

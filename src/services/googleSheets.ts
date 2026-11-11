@@ -287,10 +287,10 @@ export async function exportChallengesToNewSheet(
     c.category,
     c.status,
     c.submissionDeadline,
-    c.budgetaryIndication,
+    c.indicativeBudget,
     c.respondedVendorsCount,
-    c.problemDescription,
-    c.expectedOutcome,
+    c.detailedProblemStatement,
+    c.desiredOutcome,
   ]);
 
   return createSpreadsheet(accessToken, title, [
@@ -326,15 +326,15 @@ export async function exportProjectsToNewSheet(
   ];
 
   const rows = projects.map((p) => {
-    const totalRealisedCr = (p.benefits || []).reduce((acc, b) => acc + (b.realisedAnnualCr || 0), 0);
+    const totalRealisedCr = (p.benefits || []).reduce((acc: number, b: any) => acc + (b.realisedAnnualCr || 0), 0);
     return [
       p.projectCode,
       p.name,
       p.vendorName,
-      p.nmdcDepartment,
+      p.department,
       p.currentStage,
       p.health,
-      p.approvedBudgetCr,
+      p.approvedValueCr,
       p.actualExpenditureCr,
       p.targetCompletionDate,
       totalRealisedCr,

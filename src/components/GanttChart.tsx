@@ -20,8 +20,8 @@ export const GanttChart: React.FC<GanttChartProps> = ({ milestones, onUpdateMile
   // Calculate timeline min/max dates
   const dates = milestones.flatMap((m) => [
     new Date(m.plannedStartDate).getTime(),
-    new Date(m.plannedEndDate).getTime(),
-    m.actualEndDate ? new Date(m.actualEndDate).getTime() : new Date().getTime(),
+    new Date(m.plannedEndDate || m.plannedFinishDate || m.plannedStartDate).getTime(),
+    m.actualEndDate || m.actualFinishDate ? new Date(m.actualEndDate || m.actualFinishDate!).getTime() : new Date().getTime(),
   ]);
 
   const minTime = Math.min(...dates);
@@ -99,7 +99,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ milestones, onUpdateMile
         <div className="min-w-[760px] p-4 space-y-4">
           {milestones.map((m, idx) => {
             const start = new Date(m.plannedStartDate).getTime();
-            const end = new Date(m.plannedEndDate).getTime();
+            const end = new Date(m.plannedEndDate || m.plannedFinishDate || m.plannedStartDate).getTime();
             const leftPct = Math.max(0, Math.min(100, ((start - minTime) / totalDuration) * 100));
             const widthPct = Math.max(5, Math.min(100 - leftPct, ((end - start) / totalDuration) * 100));
             const style = getStatusColor(m.status);
@@ -122,7 +122,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ milestones, onUpdateMile
 
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                      {m.plannedStartDate} → {m.plannedEndDate}
+                      {m.plannedStartDate} → {m.plannedEndDate || m.plannedFinishDate}
                     </span>
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${style.badge}`}>
                       {m.progressPct}% {m.status}
@@ -167,7 +167,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({ milestones, onUpdateMile
                 {/* Responsible Person & Deliverable meta */}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
                   <span className="truncate max-w-[320px]">
-                    Lead: <strong className="font-medium text-slate-700">{m.responsiblePerson}</strong>
+                    Lead: <strong className="font-medium text-slate-700">{m.responsibleOfficer || m.responsiblePerson || 'NMDC Lead'}</strong>
                   </span>
                   <span className="truncate max-w-[360px] text-right text-slate-400">
                     Deliverable: {m.deliverables}

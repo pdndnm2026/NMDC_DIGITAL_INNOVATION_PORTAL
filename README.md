@@ -325,7 +325,28 @@ npm start
 
 ---
 
-## 7. Security Checklist for PSU Deployment
+## 7. Netlify Deployment Guide
+
+The portal includes **Universal Dual-Mode Architecture** designed for zero-config Netlify deployment:
+
+1. **Build Settings in Netlify:**
+   - **Build command:** `npm run build`
+   - **Publish directory:** `dist`
+   - **Node Version:** `20` (configured automatically via `netlify.toml`)
+
+2. **Routing & Redirection:**
+   - `public/_redirects` and `netlify.toml` are pre-configured with `/* /index.html 200` to prevent 404s on browser reloads.
+
+3. **Portal & AI System on Netlify:**
+   - The application automatically detects static hosting (Netlify) and engages the resilient client-side database & AI engine.
+   - All portal data (Ideas, Challenges, Proposals, Projects, PoCs, Vendor Ratings) works seamlessly without requiring an external backend. Mutations persist in `localStorage`.
+   - **AI Features on Netlify:** If you wish to use live Google Gemini API calls on your Netlify deployment, simply add your API key in Netlify's dashboard:
+     - **Site configuration** → **Environment variables** → Add `VITE_GEMINI_API_KEY` (or `GEMINI_API_KEY`).
+     - If no key is set, the portal utilizes the high-fidelity NMDC mining engineering AI fallback model with instant domain responses.
+
+---
+
+## 8. Security Checklist for PSU Deployment
 
 1. **Role-Based Access Control (RBAC):** Strict segregation between public users, employees, vendors, reviewers, and administrators.
 2. **Environment Variable Protection:** Zero API keys or secrets exposed in frontend bundles; all Gemini calls proxied through server-side endpoints.

@@ -1,346 +1,444 @@
-import React from 'react';
-import { PortalStats, ProblemStatement, UserRole } from '../types/index.js';
+import React, { useState } from 'react';
+import { PortalStats, ProblemStatement } from '../types/index.js';
 import { 
   ArrowRight, 
-  Lightbulb, 
   Briefcase, 
-  Cpu, 
-  TrendingUp, 
   ShieldCheck, 
-  Sparkles, 
-  Layers, 
   CheckCircle2, 
   Clock, 
-  IndianRupee,
-  FileCheck2,
+  IndianRupee, 
+  Building2, 
+  FileText, 
+  Bell, 
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Award,
+  Layers,
+  MapPin,
+  Calendar,
+  Users
 } from 'lucide-react';
 
 interface LandingViewProps {
   stats: PortalStats;
   problemStatements: ProblemStatement[];
   onNavigateTab: (tab: string) => void;
-  onOpenSubmitIdea: () => void;
+  onOpenCreateProblem: () => void;
   onOpenRegisterVendor: () => void;
   onSelectProblemStatement: (ps: ProblemStatement) => void;
+  onOpenLogin: () => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({
   stats,
   problemStatements,
   onNavigateTab,
-  onOpenSubmitIdea,
+  onOpenCreateProblem,
   onOpenRegisterVendor,
   onSelectProblemStatement,
+  onOpenLogin,
 }) => {
-  const featuredChallenges = problemStatements.slice(0, 4);
+  const publishedOpportunities = problemStatements.filter(
+    (p) => p.status === 'Published' || p.status === 'Vendor Participation'
+  );
 
   return (
-    <div className="space-y-12 pb-16">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-white text-slate-900 shadow-md border border-blue-200/80">
-        {/* Subtle Background Accent */}
-        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-2/3 opacity-25 pointer-events-none z-0">
-          <img
-            src="/src/assets/images/nmdc_mining_innovation_hero_1791202277822.jpg"
-            alt="NMDC Open-Cast Iron Ore Mining at Bailadila"
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-blue-50/80 to-transparent" />
-        </div>
-
-        <div className="relative z-10 max-w-4xl p-8 sm:p-12 lg:p-14 space-y-6">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold text-blue-800 bg-blue-100/80 px-3 py-1.5 rounded-md border border-blue-200 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-            <span>NMDC LIMITED · AI & DIGITAL INNOVATION ECOSYSTEM</span>
+    <div className="space-y-10 pb-16">
+      {/* 1. HERO BANNER WITH OFFICIAL MANDATED TITLE & SUBTITLE */}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-blue-900 text-white shadow-xl border border-slate-800">
+        <div className="relative z-10 max-w-4xl p-8 sm:p-12 lg:p-14 space-y-5">
+          <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-300 bg-amber-500/20 px-3 py-1 rounded-md border border-amber-400/30">
+            <ShieldCheck className="w-4 h-4 text-amber-300" />
+            <span>NMDC LIMITED · ENTERPRISE WORKFLOW MANAGEMENT PORTAL</span>
           </div>
 
-          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 leading-tight">
-            Transforming Mining Through AI, Digital Technology & Innovation
-          </h1>
-
-          <p className="text-sm sm:text-base text-slate-600 max-w-2xl leading-relaxed font-normal">
-            A unified portal for NMDC executives, technology partners and vendors to identify operational bottlenecks, propose technical solutions, execute rigorous field pilots, and realize measurable business value across India's largest iron ore operations.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
-              onClick={onOpenSubmitIdea}
-              className="px-5 py-3 text-xs sm:text-sm font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm transition-all flex items-center gap-2"
-            >
-              <Lightbulb className="w-4 h-4 text-amber-300" />
-              <span>Submit an Idea</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('challenges')}
-              className="px-5 py-3 text-xs sm:text-sm font-bold text-slate-800 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition-all flex items-center gap-2"
-            >
-              <Briefcase className="w-4 h-4 text-blue-700" />
-              <span>View Opportunities</span>
-            </button>
-            <button
-              onClick={onOpenRegisterVendor}
-              className="px-5 py-3 text-xs sm:text-sm font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100/70 rounded-lg transition-all flex items-center gap-2"
-            >
-              <span>Register as Vendor</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Dashboard Statistics Counters */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-900 tracking-tight">
-            Portal Operations & Impact Metrics
-          </h2>
-          <span className="text-xs text-slate-500">Live Database Figures</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Total Employee Ideas</span>
-            <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-              {stats.totalIdeas}
-            </div>
-            <span className="text-[11px] text-blue-700 font-medium mt-1 block">Active Pipeline</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Active Challenges</span>
-            <div className="text-2xl font-bold text-blue-700 font-mono tabular-nums">
-              {stats.activeChallenges}
-            </div>
-            <span className="text-[11px] text-slate-500 font-medium mt-1 block">Bailadila & Donimalai</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Registered Vendors</span>
-            <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-              {stats.registeredVendors}
-            </div>
-            <span className="text-[11px] text-emerald-700 font-medium mt-1 block">MSME & Industry AI</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Proposals Received</span>
-            <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-              {stats.proposalsReceived}
-            </div>
-            <span className="text-[11px] text-slate-500 font-medium mt-1 block">Technical & Commercial</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">PoCs Under Execution</span>
-            <div className="text-2xl font-bold text-amber-700 font-mono tabular-nums">
-              {stats.pocsUnderExecution}
-            </div>
-            <span className="text-[11px] text-amber-700 font-medium mt-1 block">Field Sanctioned</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Projects in Progress</span>
-            <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-              {stats.projectsUnderImplementation}
-            </div>
-            <span className="text-[11px] text-slate-500 font-medium mt-1 block">Pilots & Full Rollout</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Completed Deployments</span>
-            <div className="text-2xl font-bold text-emerald-700 font-mono tabular-nums">
-              {stats.projectsCompleted}
-            </div>
-            <span className="text-[11px] text-emerald-700 font-medium mt-1 block">Verified In Field</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">Estimated Annual Savings</span>
-            <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-              ₹ {stats.estimatedAnnualSavingsCr} Cr
-            </div>
-            <span className="text-[11px] text-blue-700 font-medium mt-1 block">Projected Business Case</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs bg-gradient-to-br from-emerald-50/50 to-white">
-            <span className="text-emerald-900 text-xs font-semibold block mb-1">Realised Savings</span>
-            <div className="text-2xl font-extrabold text-emerald-700 font-mono tabular-nums">
-              ₹ {stats.realisedSavingsCr} Cr
-            </div>
-            <span className="text-[11px] text-emerald-800 font-medium mt-1 block">Bottom-line Savings</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-            <span className="text-slate-500 text-xs block mb-1">AI Solutions Live</span>
-            <div className="text-2xl font-bold text-blue-700 font-mono tabular-nums">
-              {stats.aiSolutionsImplemented}
-            </div>
-            <span className="text-[11px] text-slate-500 font-medium mt-1 block">Across NMDC Complex</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Core Innovation Lifecycle Workflow */}
-      <section className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
-        <div>
-          <span className="text-xs font-mono text-blue-700 font-semibold tracking-wider uppercase">
-            END-TO-END DIGITAL GOVERNANCE
-          </span>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
-            NMDC Innovation Lifecycle & Procurement Flow
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Complete digital audit trail from field problem identification through vendor proposal, dual technical-commercial review, PoC execution and organization-wide scaling.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
-          {[
-            { step: '01', title: 'Problem / Idea', desc: 'NMDC executives submit site bottlenecks', icon: Lightbulb },
-            { step: '02', title: 'Challenge Published', desc: 'Opportunities opened to registered vendors', icon: Briefcase },
-            { step: '03', title: 'Vendor Offer', desc: 'Technical & budgetary offers submitted', icon: FileCheck2 },
-            { step: '04', title: 'Dual Evaluation', desc: '70% Tech + 30% Commercial scoring', icon: ShieldCheck },
-            { step: '05', title: 'PoC Sanction', desc: 'Fast-track pilot approval by committee', icon: CheckCircle2 },
-            { step: '06', title: 'Implementation', desc: 'Gantt tracking, milestones & KPIs', icon: Layers },
-            { step: '07', title: 'Benefits Realised', desc: 'Audited savings and NMDC-wide rollout', icon: TrendingUp },
-          ].map((item) => (
-            <div key={item.step} className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 relative group hover:border-blue-500 transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] font-bold text-slate-400">{item.step}</span>
-                <item.icon className="w-4 h-4 text-blue-700" />
-              </div>
-              <h4 className="font-bold text-slate-900 leading-snug">{item.title}</h4>
-              <p className="text-[11px] text-slate-500 leading-relaxed">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Featured Innovation Challenges */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900">
-              Open Innovation Challenges & Problem Statements
-            </h2>
-            <p className="text-xs text-slate-500">
-              Technology partners and vendors are invited to submit technical solutions and budgetary offers.
+            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+              NMDC PROBLEM STATEMENT & VENDOR SOLUTION PORTAL
+            </h1>
+            <p className="text-base sm:text-xl text-blue-200 mt-2 font-medium">
+              "Connecting NMDC's Operational Requirements with Innovative Industrial Solutions."
             </p>
           </div>
-          <button
-            onClick={() => onNavigateTab('challenges')}
-            className="text-xs font-semibold text-blue-700 hover:text-blue-800 flex items-center gap-1"
-          >
-            <span>View All Challenges</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+
+          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed font-normal">
+            Facilitating the complete lifecycle of operational problem statements raised by NMDC mining complexes and plants—inviting budgetary offers, conducting transparent technical evaluations, supervising Proof of Concept (PoC) field trials, processing procurement decisions, and monitoring turnkey project execution.
+          </p>
+
+          {/* Quick CTA Buttons */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <button
+              onClick={() => onNavigateTab('problems')}
+              className="px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-sm transition-all flex items-center gap-2"
+            >
+              <Briefcase className="w-4 h-4 text-slate-950" />
+              <span>Explore Open Opportunities</span>
+            </button>
+
+            <button
+              onClick={onOpenRegisterVendor}
+              className="px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-blue-700 hover:bg-blue-600 rounded-xl border border-blue-500 shadow-sm transition-all flex items-center gap-2"
+            >
+              <span>Vendor Registration</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={onOpenCreateProblem}
+              className="px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-200 hover:text-white bg-slate-800/80 hover:bg-slate-800 rounded-xl border border-slate-700 transition-all flex items-center gap-2"
+            >
+              <span>Raise Problem Statement</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. STATUTORY METRICS DISPLAY (8 MANDATED STATS PER SECTION 4) */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-blue-700" />
+            <span>Portal Operational Statistics & Real-Time Metrics</span>
+          </h2>
+          <span className="text-xs text-slate-500 font-mono">Calculated from Live Relational Records</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {featuredChallenges.map((ps) => (
-            <div
-              key={ps.id}
-              onClick={() => onSelectProblemStatement(ps)}
-              className="bg-white rounded-xl border border-slate-200 p-5 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4 group"
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {/* Stat 1: Total Problem Statements */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs hover:border-blue-300 transition-colors">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Problem Statements</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-blue-700 font-mono mt-1 block">
+              {stats.totalProblemStatements}
+            </span>
+            <span className="text-[10px] text-slate-400">All registered challenges</span>
+          </div>
+
+          {/* Stat 2: Open Opportunities */}
+          <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-emerald-800 block">Open Opportunities</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-emerald-700 font-mono mt-1 block">
+              {stats.openOpportunities}
+            </span>
+            <span className="text-[10px] text-emerald-700/80">Active for offers</span>
+          </div>
+
+          {/* Stat 3: Registered Vendors */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Registered Vendors</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-slate-800 font-mono mt-1 block">
+              {stats.registeredVendors}
+            </span>
+            <span className="text-[10px] text-slate-400">Verified vendors</span>
+          </div>
+
+          {/* Stat 4: Budgetary Offers Received */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Budgetary Offers</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-indigo-700 font-mono mt-1 block">
+              {stats.budgetaryOffersReceived}
+            </span>
+            <span className="text-[10px] text-slate-400">Proposals received</span>
+          </div>
+
+          {/* Stat 5: PoCs Completed */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">PoCs Completed</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-teal-700 font-mono mt-1 block">
+              {stats.pocsCompleted}
+            </span>
+            <span className="text-[10px] text-slate-400">Successful trials</span>
+          </div>
+
+          {/* Stat 6: Projects Awarded */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Projects Awarded</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-amber-700 font-mono mt-1 block">
+              {stats.projectsAwarded}
+            </span>
+            <span className="text-[10px] text-slate-400">LOAs / Contracts</span>
+          </div>
+
+          {/* Stat 7: Projects Under Execution */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Under Execution</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-blue-900 font-mono mt-1 block">
+              {stats.projectsUnderExecution}
+            </span>
+            <span className="text-[10px] text-slate-400">Active 12-stage projects</span>
+          </div>
+
+          {/* Stat 8: Projects Completed */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Projects Completed</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-purple-700 font-mono mt-1 block">
+              {stats.projectsCompleted}
+            </span>
+            <span className="text-[10px] text-slate-400">Closure & FAC verified</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. FOUR MINE MODULES STRIPE */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-blue-700" />
+            <span>Four Operating Mine & Production Complexes</span>
+          </h2>
+          <span className="text-xs text-slate-500 font-mono">Dedicated Modules</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                MODULE 1
+              </span>
+              <span className="text-[11px] font-bold text-slate-400 font-mono">DIOM</span>
+            </div>
+            <h3 className="font-bold text-slate-900 text-sm">Donimalai Iron Ore Mine</h3>
+            <p className="text-slate-500 text-xs">Bellary District, Karnataka</p>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                {problemStatements.filter(p => p.mineComplexCode === 'DIOM').length} Problems
+              </span>
+              <button 
+                onClick={() => onNavigateTab('problems')}
+                className="text-blue-700 font-bold hover:underline"
+              >
+                Explore →
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                MODULE 2
+              </span>
+              <span className="text-[11px] font-bold text-slate-400 font-mono">KIOM</span>
+            </div>
+            <h3 className="font-bold text-slate-900 text-sm">Kumaraswamy Iron Ore Mine</h3>
+            <p className="text-slate-500 text-xs">Sandur / Bellary, Karnataka</p>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                {problemStatements.filter(p => p.mineComplexCode === 'KIOM').length} Problems
+              </span>
+              <button 
+                onClick={() => onNavigateTab('problems')}
+                className="text-blue-700 font-bold hover:underline"
+              >
+                Explore →
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                MODULE 3
+              </span>
+              <span className="text-[11px] font-bold text-slate-400 font-mono">BCH</span>
+            </div>
+            <h3 className="font-bold text-slate-900 text-sm">Bacheli Complex</h3>
+            <p className="text-slate-500 text-xs">Bailadila Deposit 14 & 11C, Chhattisgarh</p>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                {problemStatements.filter(p => p.mineComplexCode === 'BCH').length} Problems
+              </span>
+              <button 
+                onClick={() => onNavigateTab('problems')}
+                className="text-blue-700 font-bold hover:underline"
+              >
+                Explore →
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                MODULE 4
+              </span>
+              <span className="text-[11px] font-bold text-slate-400 font-mono">KDL</span>
+            </div>
+            <h3 className="font-bold text-slate-900 text-sm">Kirandul Complex</h3>
+            <p className="text-slate-500 text-xs">Bailadila Deposit 5 & 10, Chhattisgarh</p>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                {problemStatements.filter(p => p.mineComplexCode === 'KDL').length} Problems
+              </span>
+              <button 
+                onClick={() => onNavigateTab('problems')}
+                className="text-blue-700 font-bold hover:underline"
+              >
+                Explore →
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. LATEST PUBLISHED OPPORTUNITIES SECTION */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-blue-700" />
+              <span>Open Problem Statements & Opportunities</span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              Open for registered vendor participation, query clarifications and budgetary offer submissions.
+            </p>
+          </div>
+          {problemStatements.length > 0 && (
+            <button
+              onClick={() => onNavigateTab('problems')}
+              className="text-xs font-bold text-blue-700 hover:text-blue-800 hover:underline flex items-center gap-1"
             >
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span className="font-mono font-bold text-blue-700">{ps.code}</span>
-                  <div className="flex items-center gap-2">
-                    <span>{ps.department}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>Deadline: {ps.submissionDeadline}</span>
+              <span>View All ({problemStatements.length})</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {publishedOpportunities.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-2">
+            <Briefcase className="w-8 h-8 text-slate-300 mx-auto" />
+            <p className="font-semibold text-slate-700 text-sm">
+              No open problem statements are currently available.
+            </p>
+            <p className="text-slate-400 text-xs">
+              Registered NMDC executives can submit new operational requirements through the Executive Dashboard.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {publishedOpportunities.slice(0, 4).map((ps) => (
+              <div
+                key={ps.id}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {ps.code}
+                    </span>
+                    <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      {ps.status}
+                    </span>
+                  </div>
+
+                  <h3 className="font-bold text-slate-900 text-sm leading-snug">
+                    {ps.title}
+                  </h3>
+
+                  <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">
+                    {ps.detailedProblemStatement}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{ps.department}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{ps.projectComplex}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <IndianRupee className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>Indicative: <strong className="text-slate-700">{ps.indicativeBudget}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>Deadline: <strong className="text-slate-700">{ps.submissionDeadline}</strong></span>
+                    </div>
                   </div>
                 </div>
 
-                <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-700 transition-colors leading-snug">
-                  {ps.title}
-                </h3>
-
-                <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed">
-                  {ps.problemDescription}
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 block">Indicative Budget</span>
-                  <strong className="font-mono text-slate-900 font-bold">{ps.budgetaryIndication}</strong>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 text-[11px]">
-                    <strong>{ps.respondedVendorsCount}</strong> proposals submitted
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {ps.respondedVendorsCount || 0} Offers Received
                   </span>
-                  <span className="text-blue-700 font-semibold group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
-                    <span>Review Details</span>
+
+                  <button
+                    onClick={() => {
+                      onSelectProblemStatement(ps);
+                    }}
+                    className="px-4 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-2xs"
+                  >
+                    <span>Submit Solution & Offer</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
+                  </button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Strategic Innovation Focus Areas */}
-      <section className="bg-gradient-to-br from-blue-50/70 via-slate-50 to-white text-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 border border-blue-200/80 shadow-xs">
+      {/* 5. ABOUT PORTAL & PS WORKFLOW LIFECYCLE SECTION */}
+      <section className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
         <div>
-          <span className="text-xs font-mono text-blue-700 font-semibold uppercase tracking-wider">
-            TECHNOLOGY ROADMAP
+          <span className="font-mono text-blue-700 font-bold uppercase text-[11px] tracking-wider block">
+            GOVERNANCE & TRANSPARENCY
           </span>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-1">
-            Strategic Focus Domains for NMDC Mining Operations
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-            Key operational focus areas targeted for technology interventions and AI adoption across mines.
+          <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+            End-to-End Enterprise Problem Statement & Procurement Lifecycle
+          </h3>
+          <p className="text-xs text-slate-600 max-w-3xl mt-1">
+            NMDC operational requirements undergo rigorous departmental scrutiny, transparent vendor proposal participation, structured parameter evaluations, and verified PoC field trials before final contract sanction.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">HEMM Predictive Telematics</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              Real-time vibration, CAN-bus telemetry and oil condition monitoring for 100T dumpers and hydraulic shovels to prevent unscheduled breakdowns.
-            </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 1</span>
+            <strong className="block text-slate-800">Problem Statement</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Originating officer drafts detailed bottleneck and equipment specs.
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">Autonomous Fleet Dispatch</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              AI-based dynamic routing and queue optimization between shovels and primary crushers to slash dumper idle time and diesel consumption.
-            </p>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 2</span>
+            <strong className="block text-slate-800">Scrutiny & Approval</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Department Head and Competent Authority vet and sanction publication.
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">Dense Fog & Proximity Safety</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              77GHz FMCW radar and thermal sensor fusion to ensure zero-collision mine operations during heavy monsoon fog on hilltop haul roads.
-            </p>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 3</span>
+            <strong className="block text-slate-800">Vendor Offers</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Registered vendors submit Part A Technical & Part B Itemized Costing.
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">Beneficiation Plant Digital Twins</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              Discrete element modeling and 3D simulation of crushing & screening plants (SP-1 & SP-2) to anticipate chute blockages before line trips.
-            </p>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 4</span>
+            <strong className="block text-slate-800">Technical Evaluation</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Committee scores compliance across standard parameters.
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">BVLOS Drone Surveillance</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              Automated autonomous drone-in-a-box patrols with LiDAR and thermal imaging for the 130 km slurry pipeline and tailings dam stability.
-            </p>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 5</span>
+            <strong className="block text-slate-800">Proof of Concept (PoC)</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Field trials verify accuracy, uptime and operating durability on mine sites.
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2 hover:border-blue-400 hover:shadow-xs transition-all">
-            <h4 className="font-bold text-slate-900 text-sm">AI Ore Grade Estimation</h4>
-            <p className="text-slate-600 leading-relaxed text-xs sm:text-sm">
-              High-speed hyperspectral vision on overland conveyors to calculate iron ore Fe content and detect damaging tramp metal in under 200ms.
-            </p>
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-1">
+            <span className="font-mono text-blue-700 font-bold text-[10px]">STAGE 6</span>
+            <strong className="block text-slate-800">Award & Execution</strong>
+            <span className="text-slate-500 text-[11px] leading-tight block">
+              Sanction of LOA, PO, Contract and 12-stage milestone project tracking.
+            </span>
           </div>
         </div>
       </section>

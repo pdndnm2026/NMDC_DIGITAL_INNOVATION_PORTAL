@@ -18,7 +18,9 @@ import {
   ShieldCheck,
   Eye,
   FilePlus,
-  Database
+  Database,
+  Info,
+  X
 } from 'lucide-react';
 import { 
   googleSignIn, 
@@ -74,6 +76,10 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
   const [exportingType, setExportingType] = useState<'ideas' | 'challenges' | 'projects' | null>(null);
   const [exportSuccessUrl, setExportSuccessUrl] = useState<string | null>(null);
   const [exportSuccessTitle, setExportSuccessTitle] = useState<string>('');
+  const [bannerMessage, setBannerMessage] = useState<{
+    type: 'success' | 'info' | 'error';
+    text: string;
+  } | null>(null);
 
   // Mandatory confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -125,15 +131,29 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
 
   const handleSignIn = async () => {
     setIsSigningIn(true);
+    setBannerMessage(null);
     try {
       const result = await googleSignIn();
       if (result) {
         setGoogleUser(result.user);
         setAccessToken(result.accessToken);
         await fetchSpreadsheets(result.accessToken);
+        setBannerMessage({
+          type: 'success',
+          text: `Signed in as ${result.user.displayName || result.user.email} with Google Sheets permissions.`,
+        });
+      } else {
+        // User closed the popup window
+        setBannerMessage({
+          type: 'info',
+          text: 'Google sign-in popup was closed. Click "Sign in with Google" when you wish to connect your Google Sheets account.',
+        });
       }
     } catch (err: any) {
-      alert(`Google Sign-In error: ${err.message || err}`);
+      setBannerMessage({
+        type: 'error',
+        text: `Google Sign-In failed: ${err.message || err}`,
+      });
     } finally {
       setIsSigningIn(false);
     }
@@ -179,7 +199,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
       const valuesRes = await getSpreadsheetValues(accessToken, sheetFile.id, `${firstTab}!A1:Z50`);
       setSheetValues(valuesRes.values);
     } catch (err: any) {
-      alert(`Failed to load sheet details: ${err.message}`);
+      setBannerMessage({ type: 'error', text: `Failed to load sheet details: ${err.message}` });
     } finally {
       setLoadingValues(false);
     }
@@ -193,7 +213,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
       const valuesRes = await getSpreadsheetValues(accessToken, selectedSheetId, `${tabName}!A1:Z50`);
       setSheetValues(valuesRes.values);
     } catch (err: any) {
-      alert(`Failed to load tab values: ${err.message}`);
+      setBannerMessage({ type: 'error', text: `Failed to load tab values: ${err.message}` });
     } finally {
       setLoadingValues(false);
     }
@@ -219,7 +239,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
           setExportSuccessTitle(`NMDC Innovation Portal - Employee Ideas Register`);
           fetchSpreadsheets(accessToken);
         } catch (err: any) {
-          alert(`Export failed: ${err.message}`);
+          setBannerMessage({ type: 'error', text: `Export ideas failed: ${err.message}` });
         } finally {
           setExportingType(null);
         }
@@ -246,7 +266,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
           setExportSuccessTitle(`NMDC Innovation Portal - Active Challenges`);
           fetchSpreadsheets(accessToken);
         } catch (err: any) {
-          alert(`Export failed: ${err.message}`);
+          setBannerMessage({ type: 'error', text: `Export challenges failed: ${err.message}` });
         } finally {
           setExportingType(null);
         }
@@ -273,7 +293,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
           setExportSuccessTitle(`NMDC Innovation Portal - Project Register`);
           fetchSpreadsheets(accessToken);
         } catch (err: any) {
-          alert(`Export failed: ${err.message}`);
+          setBannerMessage({ type: 'error', text: `Export projects failed: ${err.message}` });
         } finally {
           setExportingType(null);
         }
@@ -284,7 +304,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
   // Import ideas from currently previewed Google Sheet
   const handleImportCurrentSheet = () => {
     if (!sheetValues || sheetValues.length < 2) {
-      alert('The current sheet does not contain enough data rows to import ideas.');
+      setBannerMessage({ type: 'info', text: 'The selected sheet does not contain enough data rows to import ideas.' });
       return;
     }
 
@@ -329,9 +349,10 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
           }
 
           setImportResult(`Successfully imported ${importedCount} ideas from Google Sheet!`);
+          setBannerMessage({ type: 'success', text: `Import completed: ${importedCount} ideas imported into NMDC innovation database.` });
           if (onRefreshData) onRefreshData();
         } catch (err: any) {
-          alert(`Import error: ${err.message}`);
+          setBannerMessage({ type: 'error', text: `Import error: ${err.message}` });
         } finally {
           setImportingIdeas(false);
         }
@@ -412,6 +433,37 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Notification Banner */}
+      {bannerMessage && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs sm:text-sm animate-in fade-in duration-200 ${
+            bannerMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              : bannerMessage.type === 'error'
+              ? 'bg-rose-50 border-rose-300 text-rose-900'
+              : 'bg-blue-50 border-blue-200 text-blue-900'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {bannerMessage.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : bannerMessage.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            ) : (
+              <Info className="w-5 h-5 text-blue-600 shrink-0" />
+            )}
+            <span>{bannerMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setBannerMessage(null)}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+            title="Dismiss notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Success Notification Bar */}
       {exportSuccessUrl && (

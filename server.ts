@@ -4,16 +4,20 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { db } from './src/server/db.js';
 import {
-  classifyIdeaWithGemini,
-  analyzeProposalWithGemini,
-  generateDocumentExtraction,
-  generateManagementInsights,
-  answerNmdcAssistantChat,
-  convertPlainProblemToStructured,
-  generateProblemToSolutionEngine,
-  detectIdeaDuplicates,
-  calculateInnovationScore,
-} from './src/server/gemini.js';
+  ProblemStatement,
+  Proposal,
+  PocRecord,
+  AwardOfWork,
+  Project,
+  Vendor,
+  User,
+  ProblemStatementStatus,
+  PocStatus,
+  ProjectStage,
+  HealthStatus,
+  MineComplexCode,
+  AUTHORIZED_MINE_COMPLEXES
+} from './src/types/index.js';
 
 dotenv.config();
 
@@ -40,966 +44,730 @@ function broadcastSSE(event: string, data: any) {
   });
 }
 
+const getComplexInfo = (code: string) => {
+  return AUTHORIZED_MINE_COMPLEXES.find((mc) => mc.code === code) || AUTHORIZED_MINE_COMPLEXES[0];
+};
+
 // REST API ROUTES
 
-// 1. Portal Statistics
-app.get('/api/stats', (_req: Request, res: Response) => {
+// 1. Portal Statistics (Section 4 & 12)
+app.get('/api/stats', (req: Request, res: Response) => {
   try {
-    const stats = db.getStats();
+    const complex = (req.query.mineComplex || req.query.complex) as string;
+    const stats = db.getStats(complex);
     res.json({ success: true, data: stats });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// 2. Authentication
+// 2. Authentication & Registrations (Section 2 & 3)
 app.post('/api/auth/login', (req: Request, res: Response) => {
-  const { email, password, role } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const { email, password } = req.body;
+  const loginIdentifier = (email || '').trim().toLowerCase();
 
-  // Demo user lookup or role-switch simulation
-  let user = db.users.find((u) => u.email.toLowerCase() === (email || '').toLowerCase());
-
-  if (!user && role) {
-    user = db.users.find((u) => u.role === role);
+  if (db.users.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'NO_ADMIN_SETUP_REQUIRED: The database is empty. Please set up the initial Corporate Administrator account.',
+    });
   }
 
-  if (!user) {
-    // If not pre-seeded, create dynamic authenticated user
-    user = {
-      id: `usr-${Date.now()}`,
-      email: email || 'user@nmdc.co.in',
-      name: email?.split('@')[0]?.toUpperCase() || 'NMDC User',
-      role: (role as any) || 'executive',
-      createdAt: new Date().toISOString(),
-    };
-    db.users.push(user);
-  }
-
-  const act = db.addActivity(
-    user.name,
-    user.role,
-    'USER_LOGIN',
-    'Authentication',
-    `User ${user.email} signed into the portal with role: ${user.role}.`,
-    ip
+  const user = db.users.find(
+    (u) =>
+      u.email.toLowerCase() === loginIdentifier ||
+      (u.employeeId && u.employeeId.toLowerCase() === loginIdentifier) ||
+      (u.vendorId && u.vendorId.toLowerCase() === loginIdentifier)
   );
-  db.addAudit(user.id, 'USER_LOGIN', 'User', user.id, undefined, user.role, 'SUCCESS', ip);
+
+  if (!user || (user.passwordHash && user.passwordHash !== password)) {
+    return res.status(401).json({ success: false, message: 'Invalid User ID / Email or Password.' });
+  }
+
+  if (user.status === 'Pending') {
+    return res.status(403).json({
+      success: false,
+      message: 'Your registration is pending verification and activation by the NMDC Portal Administrator.',
+    });
+  }
+
+  if (user.status === 'Suspended') {
+    return res.status(403).json({
+      success: false,
+      message: 'Your account has been deactivated. Please contact the Portal Administrator.',
+    });
+  }
+
+  const act = db.addActivity(user.name, user.role, 'USER_LOGIN', user.id, `User ${user.name} logged into portal.`);
   broadcastSSE('activity', act);
 
-  res.json({
-    success: true,
-    user,
-    token: `nmdc_jwt_token_${user.id}_${Date.now()}`,
-  });
+  res.json({ success: true, user });
 });
 
-app.post('/api/auth/register-executive', (req: Request, res: Response) => {
-  const { name, email, employeeId, designation, department, projectComplex, location, contactNumber } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+// Setup Initial Corporate Administrator (Section 1)
+app.post('/api/auth/setup-admin', (req: Request, res: Response) => {
+  const existingAdmin = db.users.find((u) => u.role === 'admin');
+  if (existingAdmin) {
+    return res.status(400).json({ success: false, message: 'An administrator account already exists. Please sign in.' });
+  }
 
-  const newUser = {
+  const adminUser: User = {
+    id: `usr-admin-${Date.now()}`,
+    email: req.body.email || 'admin@nmdc.co.in',
+    name: req.body.name || 'Corporate Administrator',
+    role: 'admin',
+    department: req.body.department || 'Corporate IT & Executive Cell',
+    employeeId: req.body.employeeId || 'NMDC-CORP-ADMIN',
+    designation: req.body.designation || 'Portal Administrator',
+    mineComplexCode: 'ALL',
+    projectComplex: 'Corporate Office Hyderabad',
+    status: 'Active',
+    passwordHash: req.body.password || 'admin123',
+    createdAt: new Date().toISOString(),
+  };
+
+  db.users.push(adminUser);
+  db.addAudit(adminUser.id, 'admin', 'INITIAL_ADMIN_SETUP', 'User', adminUser.id, undefined, 'Active', 'First Corporate Administrator initialized', 'SUCCESS');
+
+  res.json({ success: true, user: adminUser });
+});
+
+// Executive Registration (Section 3A)
+app.post('/api/auth/register-executive', (req: Request, res: Response) => {
+  const { name, employeeId, designation, department, mineComplexCode, email, mobile, password } = req.body;
+
+  if (!name || !employeeId || !designation || !department || !mineComplexCode || !email || !password) {
+    return res.status(400).json({ success: false, message: 'All mandatory fields are required.' });
+  }
+
+  if (db.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
+    return res.status(400).json({ success: false, message: 'An account with this email address already exists.' });
+  }
+
+  const complex = getComplexInfo(mineComplexCode);
+
+  const newUser: User = {
     id: `usr-exec-${Date.now()}`,
     email,
     name,
-    role: 'executive' as const,
+    role: 'executive',
     department,
     employeeId,
     designation,
-    projectComplex,
+    mineComplexCode: complex.code,
+    projectComplex: complex.name,
+    mobile,
+    status: 'Pending',
+    passwordHash: password,
     createdAt: new Date().toISOString(),
   };
 
   db.users.push(newUser);
-  const act = db.addActivity(name, 'executive', 'NEW_REGISTRATION', 'ExecutiveUser', `Executive ${name} (${employeeId}) registered from ${projectComplex}.`, ip);
-  db.addAudit(newUser.id, 'EXECUTIVE_REGISTERED', 'User', newUser.id, undefined, JSON.stringify({ department, projectComplex }), 'SUCCESS', ip);
+
+  const act = db.addActivity(
+    newUser.name,
+    'executive',
+    'EXECUTIVE_REGISTRATION_SUBMITTED',
+    newUser.employeeId || newUser.id,
+    `Executive registration submitted for ${newUser.name} (${newUser.department}, ${complex.name}). Status: Pending Approval.`
+  );
   broadcastSSE('activity', act);
 
-  db.addNotification('Executive Registration', `Welcome ${name}! Your account is active. You may now submit AI and Digital ideas.`, 'success', '/ideas', newUser.id);
-
-  res.json({ success: true, user: newUser, token: `nmdc_jwt_token_${newUser.id}` });
+  res.status(201).json({
+    success: true,
+    message: 'Registration submitted successfully. Your account is pending administrator verification.',
+    user: newUser,
+  });
 });
 
+// Vendor Registration (Section 3B)
 app.post('/api/auth/register-vendor', (req: Request, res: Response) => {
-  const {
-    companyName,
-    legalEntity,
-    cin,
-    pan,
-    gstin,
-    registeredAddress,
-    website,
-    yearEstablished,
-    companySize,
-    msmeStatus,
-    startupStatus,
-    contactPerson,
-    designation,
-    email,
-    mobile,
-    capabilities,
-    miningExperienceYears,
-    majorCustomers,
-  } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const { companyName, registrationNumber, pan, gstin, registeredAddress, contactPerson, designation, email, mobile, website, msmeStatus, areasOfBusiness, password, documents } = req.body;
 
-  const vendorId = `vnd-${Date.now().toString(36)}`;
-  const newVendor = {
+  if (!companyName || !pan || !gstin || !contactPerson || !email || !password) {
+    return res.status(400).json({ success: false, message: 'Company name, PAN, GSTIN, Contact Person, Email and Password are required.' });
+  }
+
+  const vendorId = `vnd-${Date.now().toString().slice(-4)}`;
+
+  const newVendor: Vendor = {
     id: vendorId,
     name: companyName,
-    legalEntity: legalEntity || 'Private Limited',
-    cin: cin || 'U72900TG2024PTC189201',
-    pan: pan || 'AABCV9901M',
-    gstin: gstin || '36AABCV9901M1ZT',
-    registeredAddress: registeredAddress || 'India',
+    legalEntity: req.body.legalConstitution || 'Private Limited',
+    cin: registrationNumber || 'U14200KA2020PTC123456',
+    pan: pan.toUpperCase(),
+    gstin: gstin.toUpperCase(),
+    registeredAddress: registeredAddress || '',
     website: website || '',
-    yearEstablished: parseInt(yearEstablished, 10) || 2020,
-    companySize: companySize || '11-50',
-    msmeStatus: !!msmeStatus,
-    startupStatus: !!startupStatus,
-    contactPerson: contactPerson || 'Authorized Representative',
-    designation: designation || 'Director',
+    yearEstablished: Number(req.body.yearEstablished) || 2020,
+    companySize: '51-200',
+    msmeStatus: Boolean(msmeStatus),
+    startupStatus: Boolean(req.body.startupStatus),
+    contactPerson,
+    designation: designation || 'Authorized Representative',
     email,
-    mobile: mobile || '+91 90000 00000',
-    capabilities: Array.isArray(capabilities) ? capabilities : ['AI', 'Mining Technology'],
-    miningExperienceYears: parseInt(miningExperienceYears, 10) || 3,
-    majorCustomers: Array.isArray(majorCustomers) ? majorCustomers : ['PSU / Mining Enterprises'],
-    status: 'Active' as const, // Activated for immediate demo workflow
-    performanceScore: 85,
-    documents: [
-      {
-        id: `doc-${Date.now()}`,
-        vendorId,
-        title: 'Company Registration & GSTIN',
-        type: 'Registration' as const,
-        fileName: `${companyName.replace(/\s+/g, '_')}_Docs.pdf`,
-        fileSize: '1.8 MB',
-        uploadedAt: new Date().toISOString().split('T')[0],
-        status: 'Verified' as const,
-      },
-    ],
+    mobile: mobile || '',
+    areasOfExpertise: Array.isArray(areasOfBusiness) ? areasOfBusiness : [areasOfBusiness || 'Mining Technology'],
+    capabilities: [],
+    miningExperienceYears: Number(req.body.miningExperienceYears) || 0,
+    miningPsuExperience: req.body.miningPsuExperience || '',
+    majorCustomers: [],
+    annualTurnoverCr: Number(req.body.annualTurnoverCr) || 0,
+    netWorthCr: Number(req.body.netWorthCr) || 0,
+    status: 'Pending',
+    performanceScore: 0,
+    documents: Array.isArray(documents)
+      ? documents.map((d: any, idx: number) => ({
+          id: `doc-${Date.now()}-${idx}`,
+          vendorId,
+          title: d.title || 'Statutory Certificate',
+          type: d.type || 'Registration',
+          fileName: d.fileName || 'Document.pdf',
+          fileSize: d.fileSize || '1.2 MB',
+          uploadedAt: new Date().toISOString().substring(0, 10),
+          status: 'Pending' as const,
+        }))
+      : [],
     createdAt: new Date().toISOString(),
   };
 
-  db.vendors.push(newVendor);
+  db.vendors.unshift(newVendor);
 
-  const newUser = {
-    id: `usr-v-${Date.now()}`,
-    email,
-    name: contactPerson || companyName,
-    role: 'vendor' as const,
-    vendorId,
-    designation,
+  const vendorUser: User = {
+    id: `usr-${vendorId}`,
+    email: newVendor.email,
+    name: newVendor.contactPerson,
+    role: 'vendor',
+    vendorId: newVendor.id,
+    designation: newVendor.designation,
+    status: 'Pending',
+    passwordHash: password,
     createdAt: new Date().toISOString(),
   };
-  db.users.push(newUser);
+  db.users.push(vendorUser);
 
-  const act = db.addActivity(companyName, 'vendor', 'VENDOR_REGISTERED', 'VendorRegistration', `Vendor "${companyName}" registered and submitted statutory documents.`, ip);
-  db.addAudit(newUser.id, 'VENDOR_REGISTERED', 'Vendor', vendorId, undefined, companyName, 'SUCCESS', ip);
+  const act = db.addActivity(newVendor.name, 'vendor', 'VENDOR_REGISTRATION_SUBMITTED', newVendor.id, `Vendor ${newVendor.name} registered. Status: Pending Administrator Approval.`);
   broadcastSSE('activity', act);
 
-  db.addNotification('Vendor Registration Approved', `Vendor "${companyName}" is activated. You can now view challenges and submit proposals.`, 'success', '/problems');
-
-  res.json({ success: true, vendor: newVendor, user: newUser, token: `nmdc_jwt_token_${newUser.id}` });
-});
-
-// 3. Ideas Management
-app.get('/api/ideas', (req: Request, res: Response) => {
-  const { department, status, search, submitterEmail } = req.query;
-  let list = [...db.ideas];
-
-  if (submitterEmail) {
-    list = list.filter((i) => i.submitterEmail?.toLowerCase() === (submitterEmail as string).toLowerCase());
-  }
-  if (department && department !== 'All') {
-    list = list.filter((i) => i.department === department);
-  }
-  if (status && status !== 'All') {
-    list = list.filter((i) => i.status === status);
-  }
-  if (search) {
-    const q = (search as string).toLowerCase();
-    list = list.filter((i) => i.title.toLowerCase().includes(q) || i.problemStatement.toLowerCase().includes(q) || i.ideaCode.toLowerCase().includes(q));
-  }
-
-  res.json({ success: true, data: list });
-});
-
-app.post('/api/ideas', async (req: Request, res: Response) => {
-  try {
-    const data = req.body;
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-    const nextSeq = String(db.ideas.length + 1).padStart(3, '0');
-    const ideaCode = `IDEA-2025-${nextSeq}`;
-
-    // Perform server-side Gemini AI classification
-    let aiClassification = undefined;
-    try {
-      aiClassification = await classifyIdeaWithGemini({
-        title: data.title,
-        department: data.department,
-        projectComplex: data.projectComplex,
-        problemStatement: data.problemStatement,
-        existingProcess: data.existingProcess || '',
-        proposedInnovation: data.proposedInnovation,
-        aiDigitalTechnology: data.aiDigitalTechnology || '',
-        expectedBenefit: data.expectedBenefit || '',
-      });
-    } catch (e) {
-      console.error('Classification error:', e);
-    }
-
-    const newIdea = {
-      ...data,
-      id: `idea-${Date.now()}`,
-      ideaCode,
-      status: 'Submitted',
-      submittedAt: new Date().toISOString(),
-      aiAnalysis: aiClassification,
-      reviewerComments: [],
-    };
-
-    db.ideas.unshift(newIdea);
-
-    const act = db.addActivity(
-      data.submitterName || 'Executive',
-      'executive',
-      'IDEA_CREATED',
-      ideaCode,
-      `Executive ${data.submitterName} submitted innovation idea "${data.title}" for ${data.department}.`,
-      ip
-    );
-    db.addAudit(data.employeeId || 'exec', 'IDEA_CREATED', 'Idea', newIdea.id, undefined, ideaCode, 'SUCCESS', ip);
-    broadcastSSE('activity', act);
-
-    db.addNotification(
-      'New Idea Submitted',
-      `Idea ${ideaCode}: "${data.title}" submitted by ${data.submitterName}. Ready for Screening.`,
-      'info',
-      '/ideas'
-    );
-
-    res.json({ success: true, data: newIdea });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.patch('/api/ideas/:id/status', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { status, comment, reviewerName } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-
-  const idea = db.ideas.find((i) => i.id === id);
-  if (!idea) return res.status(404).json({ success: false, message: 'Idea not found' });
-
-  const prev = idea.status;
-  idea.status = status;
-  if (comment) {
-    idea.reviewerComments = idea.reviewerComments || [];
-    idea.reviewerComments.push(`[${new Date().toLocaleDateString()}] ${reviewerName || 'Reviewer'}: ${comment}`);
-  }
-
-  const act = db.addActivity(reviewerName || 'Reviewer', 'reviewer', 'IDEA_STATUS_UPDATED', idea.ideaCode, `Idea ${idea.ideaCode} status transitioned from "${prev}" to "${status}".`, ip);
-  db.addAudit('reviewer', 'IDEA_STATUS_UPDATED', 'Idea', id, prev, status, 'SUCCESS', ip);
-  broadcastSSE('activity', act);
-
-  db.addNotification(`Idea ${idea.ideaCode} Status: ${status}`, `Reviewer updated status of "${idea.title}".`, 'info', '/ideas');
-
-  res.json({ success: true, data: idea });
-});
-
-app.post('/api/ideas/:id/classify', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const idea = db.ideas.find((i) => i.id === id);
-  if (!idea) return res.status(404).json({ success: false, message: 'Idea not found' });
-
-  const analysis = await classifyIdeaWithGemini({
-    title: idea.title,
-    department: idea.department,
-    projectComplex: idea.projectComplex,
-    problemStatement: idea.problemStatement,
-    existingProcess: idea.existingProcess,
-    proposedInnovation: idea.proposedInnovation,
-    aiDigitalTechnology: idea.aiDigitalTechnology,
-    expectedBenefit: idea.expectedBenefit,
+  res.status(201).json({
+    success: true,
+    message: 'Vendor registration submitted successfully. Your account is pending administrator verification.',
+    vendor: newVendor,
   });
-
-  idea.aiAnalysis = analysis;
-  res.json({ success: true, data: analysis });
 });
 
-// 4. Problem Statements (Challenges)
+// Admin User Activation (Section 14)
+app.get('/api/admin/pending-users', (_req: Request, res: Response) => {
+  const pendingUsers = db.users.filter((u) => u.status === 'Pending');
+  const pendingVendors = db.vendors.filter((v) => v.status === 'Pending');
+  res.json({ success: true, users: pendingUsers, vendors: pendingVendors });
+});
+
+app.post('/api/admin/users/:id/approve', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = db.users.find((u) => u.id === id);
+  if (!user) return res.status(404).json({ success: false, message: 'User record not found' });
+
+  user.status = 'Active';
+  if (user.vendorId) {
+    const v = db.vendors.find((vendor) => vendor.id === user.vendorId);
+    if (v) v.status = 'Active';
+  }
+
+  const act = db.addActivity('Portal Administrator', 'admin', 'USER_ACTIVATED', user.name, `User ${user.name} (${user.role}) activated.`);
+  broadcastSSE('activity', act);
+
+  res.json({ success: true, message: `Account for ${user.name} activated successfully.`, user });
+});
+
+app.post('/api/admin/users/:id/reject', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = db.users.find((u) => u.id === id);
+  if (!user) return res.status(404).json({ success: false, message: 'User record not found' });
+
+  user.status = 'Suspended';
+  res.json({ success: true, message: `Registration for ${user.name} rejected.` });
+});
+
+// 3. Mine-Wise Problem Statements (Sections 5 & 6)
 app.get('/api/problems', (req: Request, res: Response) => {
-  const { category, department, status, search } = req.query;
+  const { category, status, complex, mineComplex, search } = req.query;
   let list = [...db.problemStatements];
 
+  const targetComplex = (mineComplex || complex) as string;
+  if (targetComplex && targetComplex !== 'ALL' && targetComplex !== 'All') {
+    list = list.filter((p) => p.mineComplexCode === targetComplex || p.projectComplex.includes(targetComplex));
+  }
   if (category && category !== 'All') {
     list = list.filter((p) => p.category === category);
-  }
-  if (department && department !== 'All') {
-    list = list.filter((p) => p.department === department);
   }
   if (status && status !== 'All') {
     list = list.filter((p) => p.status === status);
   }
   if (search) {
     const q = (search as string).toLowerCase();
-    list = list.filter((p) => p.title.toLowerCase().includes(q) || p.code.toLowerCase().includes(q) || p.problemDescription.toLowerCase().includes(q));
+    list = list.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.code.toLowerCase().includes(q) ||
+        p.department.toLowerCase().includes(q) ||
+        p.detailedProblemStatement.toLowerCase().includes(q)
+    );
   }
 
   res.json({ success: true, data: list });
 });
 
-app.get('/api/problems/:id', (req: Request, res: Response) => {
-  const ps = db.problemStatements.find((p) => p.id === req.params.id || p.code === req.params.id);
-  if (!ps) return res.status(404).json({ success: false, message: 'Problem statement not found' });
-  res.json({ success: true, data: ps });
-});
-
 app.post('/api/problems', (req: Request, res: Response) => {
-  const data = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-  const nextSeq = String(db.problemStatements.length + 1).padStart(3, '0');
-  const code = `PS-${nextSeq}`;
+  const body = req.body;
+  const mineCode: MineComplexCode = (body.mineComplexCode as MineComplexCode) || 'DIOM';
+  const complex = getComplexInfo(mineCode);
+  const code = db.generateProblemStatementCode(mineCode);
 
-  const newPS = {
-    ...data,
+  const newPS: ProblemStatement = {
     id: `ps-${Date.now()}`,
     code,
-    status: 'Open' as const,
+    mineComplexCode: complex.code,
+    mineComplexName: complex.fullName,
+    title: body.title || 'Operational Problem Statement',
+    department: body.department || 'Mining & HEMM Engineering',
+    projectComplex: complex.fullName,
+    location: complex.location,
+    originatingOfficer: body.originatingOfficer || 'Originating Officer',
+    designation: body.designation || 'General Manager (Mining)',
+    submissionDate: new Date().toISOString().substring(0, 10),
+    category: body.category || 'Mining & Heavy Earth Moving Machinery (HEMM)',
+    subCategory: body.subCategory || 'General Mining Operational Efficiency',
+    existingSituation: body.existingSituation || '',
+    detailedProblemStatement: body.detailedProblemStatement || '',
+    operationalDifficulties: body.operationalDifficulties || '',
+    existingEquipment: body.existingEquipment || '',
+    reasonForRequirement: body.reasonForRequirement || '',
+    desiredOutcome: body.desiredOutcome || '',
+    expectedBenefits: body.expectedBenefits || '',
+    supportingTechnicalInfo: body.supportingTechnicalInfo || '',
+    requiredSolution: body.requiredSolution || '',
+    technicalSpecifications: body.technicalSpecifications || '',
+    scopeOfSupply: body.scopeOfSupply || '',
+    requiredDeliverables: body.requiredDeliverables || '',
+    implementationPeriodMonths: Number(body.implementationPeriodMonths) || 6,
+    indicativeBudget: body.indicativeBudget || '₹ 2.50 Cr',
+    budgetNumeric: Number(body.budgetNumeric) || 2.50,
+    requiredVendorExperience: body.requiredVendorExperience || 'Minimum 3 years heavy industrial experience',
+    submissionDeadline: body.submissionDeadline || '2026-12-31',
+    attachments: Array.isArray(body.attachments) ? body.attachments : [],
+    status: body.isDraft ? 'Draft' : 'Submitted',
+    publishedDate: undefined,
+    createdBy: body.originatingOfficer || 'NMDC Officer',
+    approvals: [
+      {
+        stage: 'Department Review',
+        action: 'Approved',
+        officerName: body.originatingOfficer || 'Originating Officer',
+        officerRole: 'executive',
+        officerDesignation: body.designation || 'General Manager',
+        remarks: 'Created and submitted for departmental technical scrutiny.',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      },
+    ],
+    clarifications: [],
     respondedVendorsCount: 0,
-    publishedDate: new Date().toISOString().split('T')[0],
-    createdBy: data.createdBy || 'Corporate Office IT & Innovation',
   };
 
   db.problemStatements.unshift(newPS);
 
-  const act = db.addActivity('Admin', 'admin', 'CHALLENGE_PUBLISHED', code, `Published new challenge ${code}: "${data.title}".`, ip);
-  db.addAudit('admin', 'CHALLENGE_PUBLISHED', 'ProblemStatement', newPS.id, undefined, code, 'SUCCESS', ip);
+  const act = db.addActivity(
+    newPS.originatingOfficer,
+    'executive',
+    'PROBLEM_STATEMENT_CREATED',
+    newPS.code,
+    `New problem statement ${newPS.code} created for ${complex.name}. Status: ${newPS.status}.`
+  );
   broadcastSSE('activity', act);
 
-  db.addNotification('New Challenge Published', `${code}: "${data.title}" is now open for vendor technical and budgetary offers.`, 'info', '/problems');
-
-  res.json({ success: true, data: newPS });
+  res.status(201).json({ success: true, data: newPS });
 });
 
-// 5. Vendors Management
-app.get('/api/vendors', (_req: Request, res: Response) => {
-  res.json({ success: true, data: db.vendors });
-});
-
-app.patch('/api/vendors/:id/status', (req: Request, res: Response) => {
+// Approvals & Clarifications
+app.patch('/api/problems/:id/approval', (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status, score } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const { action, officerName, officerRole, officerDesignation, remarks, targetStatus } = req.body;
+  const ps = db.problemStatements.find((p) => p.id === id || p.code === id);
+  if (!ps) return res.status(404).json({ success: false, message: 'Problem statement not found' });
 
-  const vendor = db.vendors.find((v) => v.id === id);
-  if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+  const prevStatus = ps.status;
+  ps.status = targetStatus as ProblemStatementStatus;
+  if (targetStatus === 'Published' && !ps.publishedDate) {
+    ps.publishedDate = new Date().toISOString().substring(0, 10);
+  }
 
-  const prev = vendor.status;
-  vendor.status = status;
-  if (score !== undefined) vendor.performanceScore = score;
+  ps.approvals.push({
+    stage: 'Competent Authority Approval',
+    action: action || 'Approved',
+    officerName: officerName || 'Approving Authority',
+    officerRole: officerRole || 'approving_authority',
+    officerDesignation: officerDesignation || 'Chief General Manager',
+    remarks: remarks || 'Reviewed and sanctioned.',
+    timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+  });
 
-  const act = db.addActivity('Admin', 'admin', 'VENDOR_STATUS_UPDATED', vendor.name, `Updated vendor status for "${vendor.name}" to ${status}.`, ip);
-  db.addAudit('admin', 'VENDOR_STATUS_UPDATED', 'Vendor', id, prev, status, 'SUCCESS', ip);
+  const act = db.addActivity(
+    officerName || 'Approving Authority',
+    officerRole || 'approving_authority',
+    'PROBLEM_STATEMENT_STATUS_CHANGED',
+    ps.code,
+    `${ps.code} status changed from "${prevStatus}" to "${ps.status}".`
+  );
   broadcastSSE('activity', act);
 
-  res.json({ success: true, data: vendor });
+  res.json({ success: true, data: ps });
 });
 
-// 6. Proposals & Budgetary Offers
+// 4. Mine-Wise Proposals (Sections 7, 8 & 10)
 app.get('/api/proposals', (req: Request, res: Response) => {
-  const { problemStatementId, vendorId, status } = req.query;
+  const { problemStatementId, mineComplex, complex, vendorId } = req.query;
   let list = [...db.proposals];
 
+  const targetComplex = (mineComplex || complex) as string;
+  if (targetComplex && targetComplex !== 'ALL' && targetComplex !== 'All') {
+    list = list.filter((p) => p.mineComplexCode === targetComplex);
+  }
   if (problemStatementId) {
-    list = list.filter((p) => p.problemStatementId === problemStatementId || p.problemStatementCode === problemStatementId);
+    list = list.filter((p) => p.problemStatementId === problemStatementId);
   }
   if (vendorId) {
     list = list.filter((p) => p.vendorId === vendorId);
   }
-  if (status && status !== 'All') {
-    list = list.filter((p) => p.status === status);
-  }
-
   res.json({ success: true, data: list });
 });
 
-app.post('/api/proposals', async (req: Request, res: Response) => {
-  try {
-    const data = req.body;
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-    const nextSeq = String(db.proposals.length + 1).padStart(3, '0');
-    const proposalCode = `PROP-2025-${nextSeq}`;
+app.post('/api/proposals', (req: Request, res: Response) => {
+  const body = req.body;
+  const ps = db.problemStatements.find((p) => p.id === body.problemStatementId || p.code === body.problemStatementCode);
+  if (!ps) return res.status(404).json({ success: false, message: 'Problem statement not found' });
 
-    const ps = db.problemStatements.find((p) => p.id === data.problemStatementId || p.code === data.problemStatementCode);
-    if (ps) {
-      ps.respondedVendorsCount = (ps.respondedVendorsCount || 0) + 1;
-    }
+  // Strictly inherit mine complex from problem statement (Section 7)
+  const mineCode = ps.mineComplexCode;
+  const proposalCode = db.generateProposalCode(mineCode);
 
-    // Auto calculate costs
-    const c = data.costBreakdown || {};
-    const totalExclGst =
-      (c.pocCost || 0) +
-      (c.pilotCost || 0) +
-      (c.hardwareCost || 0) +
-      (c.softwareCost || 0) +
-      (c.integrationCost || 0) +
-      (c.licenceCost || 0) +
-      (c.trainingCost || 0) +
-      (c.amcCostPerYear || 0) +
-      (c.otherCost || 0);
-
-    const gstRate = c.gstRate || 18;
-    const gstAmount = Math.round(totalExclGst * (gstRate / 100));
-    const totalCostInclGst = totalExclGst + gstAmount;
-
-    const computedCostBreakdown = {
-      ...c,
-      totalExclGst,
-      gstAmount,
-      totalCostInclGst,
-    };
-
-    const newProposal = {
-      ...data,
-      id: `prop-${Date.now()}`,
-      proposalCode,
-      submittedAt: new Date().toISOString(),
-      status: 'Submitted',
-      costBreakdown: computedCostBreakdown,
-    };
-
-    // Run AI analysis
-    try {
-      const aiReview = await analyzeProposalWithGemini(newProposal, ps);
-      newProposal.aiReview = aiReview;
-    } catch (e) {
-      console.error('Proposal AI analysis err:', e);
-    }
-
-    db.proposals.unshift(newProposal);
-
-    const act = db.addActivity(
-      data.vendorName || 'Vendor',
-      'vendor',
-      'PROPOSAL_SUBMITTED',
-      proposalCode,
-      `Vendor "${data.vendorName}" submitted technical & budgetary proposal ${proposalCode} for ${ps?.code || 'Challenge'}. Total: ₹ ${(totalCostInclGst / 10000000).toFixed(2)} Cr.`,
-      ip
-    );
-    db.addAudit(data.vendorId || 'vnd', 'PROPOSAL_SUBMITTED', 'Proposal', newProposal.id, undefined, proposalCode, 'SUCCESS', ip);
-    broadcastSSE('activity', act);
-
-    db.addNotification(
-      'Proposal Received',
-      `New proposal ${proposalCode} received for ${ps?.code || 'Challenge'} from ${data.vendorName}.`,
-      'info',
-      '/proposals'
-    );
-
-    res.json({ success: true, data: newProposal });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/proposals/:id/evaluate', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { reviewerName, technicalScore, commercialScore, recommendation, comments } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-
-  const prop = db.proposals.find((p) => p.id === id);
-  if (!prop) return res.status(404).json({ success: false, message: 'Proposal not found' });
-
-  prop.technicalScore = technicalScore;
-  prop.commercialScore = commercialScore;
-  prop.compositeScore = Math.round((technicalScore * 0.7 + commercialScore * 0.3) * 10) / 10;
-  prop.committeeRecommendation = recommendation;
-  prop.committeeComments = comments;
-
-  if (recommendation === 'Recommend PoC') {
-    prop.status = 'PoC Recommended';
-  }
-
-  const act = db.addActivity(
-    reviewerName || 'Reviewer',
-    'reviewer',
-    'EVALUATION_COMPLETED',
-    prop.proposalCode,
-    `Committee evaluated ${prop.proposalCode}: Tech ${technicalScore}, Comm ${commercialScore}. Rec: ${recommendation}.`,
-    ip
-  );
-  db.addAudit('reviewer', 'PROPOSAL_EVALUATED', 'Proposal', id, undefined, JSON.stringify({ technicalScore, commercialScore, recommendation }), 'SUCCESS', ip);
-  broadcastSSE('activity', act);
-
-  res.json({ success: true, data: prop });
-});
-
-app.patch('/api/proposals/:id/status', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { status, comments } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-
-  const prop = db.proposals.find((p) => p.id === id);
-  if (!prop) return res.status(404).json({ success: false, message: 'Proposal not found' });
-
-  const prev = prop.status;
-  prop.status = status;
-  if (comments) prop.committeeComments = comments;
-
-  const act = db.addActivity('Admin', 'admin', 'PROPOSAL_STATUS_CHANGED', prop.proposalCode, `Proposal ${prop.proposalCode} changed to "${status}".`, ip);
-  db.addAudit('admin', 'PROPOSAL_STATUS_CHANGED', 'Proposal', id, prev, status, 'SUCCESS', ip);
-  broadcastSSE('activity', act);
-
-  db.addNotification(`Proposal ${prop.proposalCode} Updated`, `Status changed to ${status}.`, 'info', '/proposals');
-
-  res.json({ success: true, data: prop });
-});
-
-app.post('/api/proposals/:id/analyze-ai', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const prop = db.proposals.find((p) => p.id === id);
-  if (!prop) return res.status(404).json({ success: false, message: 'Proposal not found' });
-
-  const ps = db.problemStatements.find((p) => p.id === prop.problemStatementId || p.code === prop.problemStatementCode);
-  const analysis = await analyzeProposalWithGemini(prop, ps);
-  prop.aiReview = analysis;
-
-  res.json({ success: true, data: analysis });
-});
-
-// 7. Evaluation Parameters (Configurable by Admin)
-app.get('/api/evaluation-parameters', (_req: Request, res: Response) => {
-  res.json({ success: true, data: db.evaluationParameters });
-});
-
-app.put('/api/evaluation-parameters', (req: Request, res: Response) => {
-  const { parameters } = req.body;
-  if (Array.isArray(parameters)) {
-    db.evaluationParameters = parameters;
-    db.addAudit('admin', 'EVALUATION_PARAMS_UPDATED', 'Config', 'EvaluationParameters', undefined, 'Updated weights', 'SUCCESS', '127.0.0.1');
-    res.json({ success: true, data: db.evaluationParameters });
-  } else {
-    res.status(400).json({ success: false, message: 'Parameters array required' });
-  }
-});
-
-// 8. Projects & Milestones
-app.get('/api/projects', (req: Request, res: Response) => {
-  res.json({ success: true, data: db.projects });
-});
-
-app.post('/api/projects/convert-proposal', (req: Request, res: Response) => {
-  const { proposalId, projectName, projectManager } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-
-  const prop = db.proposals.find((p) => p.id === proposalId);
-  if (!prop) return res.status(404).json({ success: false, message: 'Proposal not found' });
-
-  const ps = db.problemStatements.find((p) => p.id === prop.problemStatementId);
-  const nextSeq = String(db.projects.length + 1).padStart(2, '0');
-  const projectCode = `NMDC-PRJ-2025-${nextSeq}`;
-
-  const budgetCr = Math.round(((prop.costBreakdown?.totalCostInclGst || 30000000) / 10000000) * 100) / 100;
-
-  const newProject = {
-    id: `proj-${Date.now()}`,
-    projectCode,
-    name: projectName || `${prop.problemStatementTitle} Deployment`,
-    problemStatementId: prop.problemStatementId,
-    problemStatementCode: prop.problemStatementCode,
-    vendorId: prop.vendorId,
-    vendorName: prop.vendorName,
-    nmdcDepartment: ps?.department || 'Operations',
-    nmdcComplex: ps?.projectComplex || 'Bailadila Complex',
-    projectManager: projectManager || 'Dr. Amitabh Verma (GM - Mining)',
-    approvedBudgetCr: budgetCr,
-    actualExpenditureCr: Math.round(budgetCr * 0.25 * 100) / 100,
-    startDate: new Date().toISOString().split('T')[0],
-    targetCompletionDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * (prop.timelineMonths || 6) * 30).toISOString().split('T')[0],
-    currentStage: 'PoC' as const,
-    health: 'On Track' as const,
-    progressPct: 15,
-    milestones: [
+  const newProp: Proposal = {
+    id: `prop-${Date.now()}`,
+    proposalCode,
+    mineComplexCode: ps.mineComplexCode,
+    mineComplexName: ps.mineComplexName,
+    problemStatementId: ps.id,
+    problemStatementCode: ps.code,
+    problemStatementTitle: ps.title,
+    vendorId: body.vendorId || 'vnd-001',
+    vendorName: body.vendorName || 'Registered Vendor',
+    submittedAt: new Date().toISOString(),
+    status: body.isDraft ? 'Draft' : 'Submitted',
+    isLocked: !body.isDraft,
+    revisionNumber: 1,
+    versionHistory: [
       {
-        id: `m-${Date.now()}-1`,
-        title: 'Project Initiation, Kick-off & Site Survey',
-        stage: 'Initiation' as const,
-        plannedStartDate: new Date().toISOString().split('T')[0],
-        plannedEndDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().split('T')[0],
-        progressPct: 100,
-        status: 'Completed' as const,
-        responsiblePerson: projectManager || 'Project Manager',
-        deliverables: 'Signed charter, baseline specs, site permits',
-      },
-      {
-        id: `m-${Date.now()}-2`,
-        title: 'Prototype / PoC Testing on Site',
-        stage: 'PoC' as const,
-        plannedStartDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString().split('T')[0],
-        plannedEndDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 75).toISOString().split('T')[0],
-        progressPct: 30,
-        status: 'On Track' as const,
-        responsiblePerson: `${prop.vendorName} Lead`,
-        deliverables: 'Proof of concept bench test on selected equipment',
-      },
-      {
-        id: `m-${Date.now()}-3`,
-        title: 'Pilot Deployment & User Acceptance Testing (UAT)',
-        stage: 'Pilot' as const,
-        plannedStartDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 80).toISOString().split('T')[0],
-        plannedEndDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 140).toISOString().split('T')[0],
-        progressPct: 0,
-        status: 'On Track' as const,
-        responsiblePerson: 'NMDC Technical Lead',
-        deliverables: 'Live field pilot with telemetry correlation',
+        revisionNumber: 1,
+        submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        revisedBy: body.vendorName || 'Vendor Lead',
+        reasonForRevision: 'Initial offer submission',
+        changesSummary: 'Complete Part A, B and C submitted.',
       },
     ],
-    risks: [
-      {
-        id: `r-${Date.now()}`,
-        description: 'Vibration & dust ingress during heavy monsoon cycles.',
-        category: 'Technical' as const,
-        severity: 'Medium' as const,
-        mitigationPlan: 'Heavy duty IP68 enclosures with polyurethane sleeves.',
-        status: 'Mitigated' as const,
-      },
-    ],
-    kpis: [
-      {
-        id: `k-${Date.now()}-1`,
-        name: 'Availability Improvement',
-        baseline: 'Baseline Level',
-        target: `${prop.businessCase?.availabilityImprovementPct || 10}%`,
-        current: 'Measuring',
-        unit: '%',
-        status: 'In Progress' as const,
-      },
-    ],
-    benefits: [
-      {
-        id: `b-${Date.now()}`,
-        category: 'Financial' as const,
-        description: 'Cost savings through reduced equipment breakdown & diesel optimization.',
-        projectedAnnualCr: Math.round(((prop.businessCase?.expectedSavingsAnnual || 25000000) / 10000000) * 100) / 100,
-        realisedAnnualCr: 0,
-      },
-    ],
-    reports: [],
+    understandingOfRequirement: body.understandingOfRequirement || '',
+    proposedSolution: body.proposedSolution || '',
+    technicalSpecifications: body.technicalSpecifications || '',
+    equipmentDetails: body.equipmentDetails || '',
+    softwareDetails: body.softwareDetails || '',
+    systemArchitecture: body.systemArchitecture || '',
+    scopeOfSupply: body.scopeOfSupply || '',
+    installationCommissioning: body.installationCommissioning || '',
+    integrationRequirements: body.integrationRequirements || '',
+    implementationMethodology: body.implementationMethodology || '',
+    deliveryPeriodWeeks: Number(body.deliveryPeriodWeeks) || 12,
+    warrantyMonths: Number(body.warrantyMonths) || 12,
+    amcScope: body.amcScope || '',
+    trainingScope: body.trainingScope || '',
+    technicalDeviations: body.technicalDeviations || 'No technical deviations.',
+    supportingDocuments: Array.isArray(body.supportingDocuments) ? body.supportingDocuments : [],
+    costBreakdown: body.costBreakdown || {
+      equipmentCost: 0,
+      hardwareCost: 0,
+      softwareCost: 0,
+      licenceCost: 0,
+      installationCost: 0,
+      commissioningCost: 0,
+      integrationCost: 0,
+      trainingCost: 0,
+      freightCost: 0,
+      amcCostPerYear: 0,
+      otherCharges: 0,
+      subtotalCost: 0,
+      gstRate: 18,
+      gstAmount: 0,
+      totalEstimatedCost: 0,
+    },
+    commercialConditions: body.commercialConditions || {
+      deliveryPeriodWeeks: 12,
+      offerValidityDays: 90,
+      paymentTerms: 'Standard NMDC Commercial Milestones',
+      warrantyPeriodMonths: 12,
+      amcYears: 3,
+      priceBasis: `FOR Destination (${ps.mineComplexName})`,
+      taxesAndDuties: 'GST extra at prevailing statutory rates',
+      otherCommercialConditions: '',
+    },
+    technicalComplianceStatus: undefined,
+    commercialRank: undefined,
   };
 
-  prop.status = 'PoC Approved';
-  if (ps) ps.status = 'PoC Awarded';
+  db.proposals.unshift(newProp);
+  ps.respondedVendorsCount = (ps.respondedVendorsCount || 0) + 1;
 
-  db.projects.unshift(newProject);
-
-  const act = db.addActivity(
-    'Admin',
-    'admin',
-    'PROJECT_CREATED',
-    projectCode,
-    `Converted proposal ${prop.proposalCode} into active implementation project ${projectCode} for ${prop.vendorName}.`,
-    ip
-  );
-  db.addAudit('admin', 'PROJECT_CREATED', 'Project', newProject.id, undefined, projectCode, 'SUCCESS', ip);
+  const act = db.addActivity(newProp.vendorName, 'vendor', 'PROPOSAL_SUBMITTED', newProp.proposalCode, `Budgetary offer ${newProp.proposalCode} submitted for ${ps.code} (${ps.mineComplexCode}).`);
   broadcastSSE('activity', act);
 
-  db.addNotification('New Project Initiated', `Project ${projectCode}: "${newProject.name}" has been sanctioned.`, 'success', '/projects');
-
-  res.json({ success: true, data: newProject });
+  res.status(201).json({ success: true, data: newProp });
 });
 
-app.patch('/api/projects/:id/milestones/:mId', (req: Request, res: Response) => {
-  const { id, mId } = req.params;
-  const { progressPct, status, actualEndDate } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+// Technical Evaluation (Section 12)
+app.patch('/api/proposals/:id/evaluate', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { complianceStatus, marks, remarks, evaluatorName, recommendation } = req.body;
+  const prop = db.proposals.find((p) => p.id === id || p.proposalCode === id);
+  if (!prop) return res.status(404).json({ success: false, message: 'Proposal not found' });
 
-  const proj = db.projects.find((p) => p.id === id);
-  if (!proj) return res.status(404).json({ success: false, message: 'Project not found' });
+  prop.technicalComplianceStatus = complianceStatus || 'Compliant';
+  prop.technicalMarks = Number(marks) || 90;
+  prop.technicalRemarks = remarks || 'Technically evaluated against specifications.';
+  prop.evaluatedBy = evaluatorName || 'Technical Evaluator';
+  prop.evaluatedAt = new Date().toISOString().replace('T', ' ').substring(0, 16);
+  prop.committeeRecommendation = recommendation || 'Recommend PoC';
+  prop.status = complianceStatus === 'Compliant' ? 'Technically Qualified' : complianceStatus === 'Non-Compliant' ? 'Technically Disqualified' : 'Under Technical Evaluation';
 
-  const m = proj.milestones.find((milestone) => milestone.id === mId);
-  if (!m) return res.status(404).json({ success: false, message: 'Milestone not found' });
-
-  const prev = m.progressPct;
-  if (progressPct !== undefined) m.progressPct = progressPct;
-  if (status) m.status = status;
-  if (actualEndDate) m.actualEndDate = actualEndDate;
-
-  // Recalculate project progress
-  const total = proj.milestones.reduce((acc, cur) => acc + cur.progressPct, 0);
-  proj.progressPct = Math.round(total / proj.milestones.length);
-
-  const act = db.addActivity('Project Manager', 'project_manager', 'MILESTONE_UPDATED', proj.projectCode, `Milestone "${m.title}" updated: ${prev}% -> ${m.progressPct}%. Status: ${m.status}.`, ip);
-  db.addAudit('pm', 'MILESTONE_UPDATED', 'ProjectMilestone', mId, String(prev), String(m.progressPct), 'SUCCESS', ip);
+  const act = db.addActivity(prop.evaluatedBy || 'Technical Evaluator', 'tech_evaluator', 'TECHNICAL_EVALUATION_RECORDED', prop.proposalCode, `Technical evaluation recorded for ${prop.proposalCode}: ${complianceStatus} (Marks: ${marks}/100)`);
   broadcastSSE('activity', act);
 
-  res.json({ success: true, data: proj });
+  res.json({ success: true, data: prop });
 });
 
-// 9. Real-time Activity Logs & Server-Sent Events (SSE)
-app.get('/api/activities', (_req: Request, res: Response) => {
-  res.json({ success: true, data: db.activityLogs });
-});
-
-app.get('/api/realtime/stream', (req: Request, res: Response) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-
-  res.write(`event: connected\ndata: ${JSON.stringify({ time: new Date().toISOString() })}\n\n`);
-  sseClients.push(res);
-
-  req.on('close', () => {
-    const idx = sseClients.indexOf(res);
-    if (idx !== -1) sseClients.splice(idx, 1);
-  });
-});
-
-// 10. Audit Logs (Immutable, Admin View)
-app.get('/api/audit-logs', (_req: Request, res: Response) => {
-  res.json({ success: true, data: db.auditLogs });
-});
-
-// 11. In-App Notifications
-app.get('/api/notifications', (req: Request, res: Response) => {
-  const { userId } = req.query;
-  const list = db.notifications.filter((n) => !n.userId || n.userId === userId);
-  res.json({ success: true, data: list });
-});
-
-app.patch('/api/notifications/:id/read', (req: Request, res: Response) => {
-  const notif = db.notifications.find((n) => n.id === req.params.id);
-  if (notif) notif.read = true;
-  res.json({ success: true });
-});
-
-// 12. Gemini AI Endpoints
-app.post('/api/ai/classify', async (req: Request, res: Response) => {
-  try {
-    const analysis = await classifyIdeaWithGemini(req.body);
-    res.json({ success: true, data: analysis });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/ai/analyze-proposal', async (req: Request, res: Response) => {
-  try {
-    const { proposal, problemStatement } = req.body;
-    const review = await analyzeProposalWithGemini(proposal, problemStatement);
-    res.json({ success: true, data: review });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/ai/document-extract', async (req: Request, res: Response) => {
-  try {
-    const { fileName, content } = req.body;
-    const extracted = await generateDocumentExtraction(fileName || 'Document.pdf', content || 'Vendor Technical Submission');
-    res.json({ success: true, data: extracted });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.get('/api/ai/management-insights', async (_req: Request, res: Response) => {
-  try {
-    const stats = db.getStats();
-    const insights = await generateManagementInsights(stats, db.projects, db.ideas, db.proposals);
-    res.json({ success: true, data: insights });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/ai/chat', async (req: Request, res: Response) => {
-  try {
-    const { message, history, role } = req.body;
-    const reply = await answerNmdcAssistantChat(message, history || [], role || 'public');
-    res.json({ success: true, reply });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// 13. NMDC Innovation Knowledge Repository
-app.get('/api/knowledge-base', (req: Request, res: Response) => {
-  const { category, type, search } = req.query;
-  let list = [...db.knowledgeItems];
-  if (category && category !== 'All') {
-    list = list.filter((k) => k.category === category);
-  }
-  if (type && type !== 'All') {
-    list = list.filter((k) => k.type === type);
-  }
-  if (search) {
-    const q = (search as string).toLowerCase();
-    list = list.filter((k) => k.title.toLowerCase().includes(q) || k.summary.toLowerCase().includes(q) || k.complex.toLowerCase().includes(q));
-  }
-  res.json({ success: true, data: list });
-});
-
-// 14. "Already Implemented in NMDC" Search
-app.get('/api/already-implemented', (req: Request, res: Response) => {
-  const { query, complex } = req.query;
-  let list = [...db.implementedSolutions];
-  if (complex && complex !== 'All') {
-    list = list.filter((i) => i.implementedComplex.toLowerCase().includes((complex as string).toLowerCase()));
-  }
-  if (query) {
-    const q = (query as string).toLowerCase();
-    list = list.filter((i) =>
-      i.title.toLowerCase().includes(q) ||
-      i.problemAddressed.toLowerCase().includes(q) ||
-      i.technology.toLowerCase().includes(q) ||
-      i.vendor.toLowerCase().includes(q)
-    );
-  }
-  res.json({ success: true, data: list });
-});
-
-// 15. Vendor Solution Marketplace
-app.get('/api/vendor-marketplace', (req: Request, res: Response) => {
-  const { category, equipment, search } = req.query;
-  let list = [...db.vendorSolutions];
-  if (category && category !== 'All') {
-    list = list.filter((v) => v.category === category);
-  }
-  if (equipment && equipment !== 'All') {
-    list = list.filter((v) => v.targetMiningEquipment.some((eq) => eq.toLowerCase().includes((equipment as string).toLowerCase())));
-  }
-  if (search) {
-    const q = (search as string).toLowerCase();
-    list = list.filter((v) =>
-      v.title.toLowerCase().includes(q) ||
-      v.shortSummary.toLowerCase().includes(q) ||
-      v.vendorName.toLowerCase().includes(q)
-    );
-  }
-  res.json({ success: true, data: list });
-});
-
-// 16. Dedicated PoC Management Module
+// 5. Mine-Wise Proof of Concept (PoC) Management (Section 9 & 14)
 app.get('/api/pocs', (req: Request, res: Response) => {
-  const { status, site } = req.query;
+  const { status, mineComplex, complex } = req.query;
   let list = [...db.pocRecords];
+  const targetComplex = (mineComplex || complex) as string;
+  if (targetComplex && targetComplex !== 'ALL' && targetComplex !== 'All') {
+    list = list.filter((p) => p.mineComplexCode === targetComplex);
+  }
   if (status && status !== 'All') {
     list = list.filter((p) => p.status === status);
   }
-  if (site && site !== 'All') {
-    list = list.filter((p) => p.siteComplex.includes(site as string));
-  }
   res.json({ success: true, data: list });
+});
+
+app.post('/api/pocs', (req: Request, res: Response) => {
+  const body = req.body;
+  const mineCode: MineComplexCode = (body.mineComplexCode as MineComplexCode) || 'DIOM';
+  const complex = getComplexInfo(mineCode);
+  const pocCode = db.generatePocCode(mineCode);
+
+  const newPoc: PocRecord = {
+    id: `poc-${Date.now()}`,
+    pocCode,
+    mineComplexCode: complex.code,
+    mineComplexName: complex.fullName,
+    relatedProblemStatementId: body.relatedProblemStatementId || '',
+    problemStatementCode: body.problemStatementCode || '',
+    problemStatementTitle: body.problemStatementTitle || 'Operational Field Trial',
+    vendorId: body.vendorId || '',
+    vendorName: body.vendorName || '',
+    trialLocation: body.trialLocation || complex.fullName,
+    equipmentProcess: body.equipmentProcess || 'Operational Equipment',
+    pocScope: body.pocScope || '',
+    trialPeriodWeeks: Number(body.trialPeriodWeeks) || 4,
+    startDate: body.startDate || new Date().toISOString().substring(0, 10),
+    completionDate: body.completionDate || '2026-12-31',
+    baselinePerformance: body.baselinePerformance || '',
+    expectedPerformance: body.expectedPerformance || '',
+    evaluationParameters: Array.isArray(body.evaluationParameters) ? body.evaluationParameters : ['Measurement accuracy', 'System uptime'],
+    nmdcCommitteeMembers: Array.isArray(body.nmdcCommitteeMembers) ? body.nmdcCommitteeMembers : ['PoC Committee Chair'],
+    vendorResponsibilities: body.vendorResponsibilities || '',
+    trialCost: Number(body.trialCost) || 0,
+    actualResults: '',
+    observations: '',
+    recommendations: '',
+    status: (body.status as PocStatus) || 'Proposed',
+    progressPct: 0,
+    trialReports: [],
+    isClosed: false,
+  };
+
+  db.pocRecords.unshift(newPoc);
+  const act = db.addActivity('PoC Committee', 'poc_committee', 'POC_INITIATED', newPoc.pocCode, `PoC trial ${newPoc.pocCode} initiated for ${complex.name}.`);
+  broadcastSSE('activity', act);
+
+  res.status(201).json({ success: true, data: newPoc });
 });
 
 app.patch('/api/pocs/:id/status', (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status, progressPct, resultsSummary, recommendation } = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
-
-  const poc = db.pocRecords.find((p) => p.id === id);
+  const { status, progressPct, actualResults, observations, recommendations } = req.body;
+  const poc = db.pocRecords.find((p) => p.id === id || p.pocCode === id);
   if (!poc) return res.status(404).json({ success: false, message: 'PoC record not found' });
 
   const prev = poc.status;
-  poc.status = status;
-  if (progressPct !== undefined) poc.progressPct = progressPct;
-  if (resultsSummary) poc.testResultsSummary = resultsSummary;
-  if (recommendation) poc.recommendationForPilot = recommendation;
+  poc.status = status as PocStatus;
+  if (progressPct !== undefined) poc.progressPct = Number(progressPct);
+  if (actualResults) poc.actualResults = actualResults;
+  if (observations) poc.observations = observations;
+  if (recommendations) poc.recommendations = recommendations;
+  if (status === 'Closed' || status === 'Successful') poc.isClosed = true;
 
-  const act = db.addActivity('Technical Committee', 'reviewer', 'POC_STATUS_UPDATED', poc.pocCode, `PoC ${poc.pocCode} transitioned from ${prev} to ${status}.`, ip);
-  db.addAudit('reviewer', 'POC_STATUS_UPDATED', 'PoCRecord', id, prev, status, 'SUCCESS', ip);
+  const act = db.addActivity('PoC Committee', 'poc_committee', 'POC_STATUS_UPDATED', poc.pocCode, `PoC ${poc.pocCode} transitioned from ${prev} to ${status}.`);
   broadcastSSE('activity', act);
 
   res.json({ success: true, data: poc });
 });
 
-// 17. Vendor Rating System (10 Parameters)
-app.post('/api/vendors/:id/rate', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const scores = req.body;
-  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+// 6. Mine-Wise Award of Work (Section 10 & 16)
+app.get('/api/awards', (req: Request, res: Response) => {
+  const { mineComplex, complex } = req.query;
+  let list = [...db.awardsOfWork];
+  const targetComplex = (mineComplex || complex) as string;
+  if (targetComplex && targetComplex !== 'ALL' && targetComplex !== 'All') {
+    list = list.filter((a) => a.mineComplexCode === targetComplex);
+  }
+  res.json({ success: true, data: list });
+});
 
-  const vendor = db.vendors.find((v) => v.id === id);
-  if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+app.post('/api/awards', (req: Request, res: Response) => {
+  const body = req.body;
+  const mineCode: MineComplexCode = (body.mineComplexCode as MineComplexCode) || 'DIOM';
+  const complex = getComplexInfo(mineCode);
+  const awardCode = db.generateAwardCode(mineCode);
 
-  db.rateVendor(id, scores);
+  const newAward: AwardOfWork = {
+    id: `aow-${Date.now()}`,
+    awardCode,
+    mineComplexCode: complex.code,
+    mineComplexName: complex.fullName,
+    problemStatementId: body.problemStatementId || '',
+    problemStatementCode: body.problemStatementCode || '',
+    workTitle: body.workTitle || 'Implementation Contract',
+    vendorId: body.vendorId || '',
+    vendorName: body.vendorName || '',
+    procurementReference: body.procurementReference || `NMDC/${mineCode}/PROC/2026/001`,
+    tenderEnquiryNumber: body.tenderEnquiryNumber || `NMDC-${mineCode}-TENDER-2026-001`,
+    gemBidNumber: body.gemBidNumber || 'GEM/2026/B/001',
+    prNumber: body.prNumber || 'PR-2026-001',
+    poNumber: body.poNumber || 'PO-450000001',
+    loaNumber: body.loaNumber || `LOA/NMDC/${mineCode}/2026/001`,
+    contractNumber: body.contractNumber || `CONT-NMDC-${mineCode}-2026-001`,
+    awardDate: body.awardDate || new Date().toISOString().substring(0, 10),
+    basicAwardValue: Number(body.basicAwardValue) || 0,
+    gstAmount: Number(body.gstAmount) || 0,
+    totalContractValue: Number(body.totalContractValue) || 0,
+    deliveryPeriodWeeks: Number(body.deliveryPeriodWeeks) || 12,
+    completionPeriodMonths: Number(body.completionPeriodMonths) || 6,
+    warrantyPeriodMonths: Number(body.warrantyMonths) || 12,
+    pbgDetails: body.pbgDetails || {
+      bgNumber: 'BG-SBI-2026-001',
+      issuingBank: 'State Bank of India',
+      amount: Math.round((Number(body.totalContractValue) || 0) * 0.05),
+      validityDate: '2027-12-31',
+    },
+    paymentTerms: body.paymentTerms || 'Standard NMDC Commercial Milestones',
+    scopeOfWorkSummary: body.scopeOfWorkSummary || '',
+    responsibleOfficer: body.responsibleOfficer || 'Nodal Officer',
+    responsibleOfficerDesignation: body.responsibleOfficerDesignation || 'DGM (Projects)',
+    department: body.department || 'Mining Engineering',
+    projectComplex: complex.fullName,
+    status: 'Sanctioned',
+    documents: [],
+  };
 
-  const act = db.addActivity(
-    scores.evaluatedBy || 'Project Manager',
-    'project_manager',
-    'VENDOR_RATED',
-    vendor.name,
-    `Evaluated vendor "${vendor.name}". New overall performance rating: ${vendor.performanceScore}/100.`,
-    ip
-  );
-  db.addAudit('pm', 'VENDOR_RATED', 'Vendor', id, undefined, JSON.stringify(scores), 'SUCCESS', ip);
+  db.awardsOfWork.unshift(newAward);
+
+  // Auto-instantiate Project
+  const projectCode = db.generateProjectCode(mineCode);
+  const newProject: Project = {
+    id: `prj-${Date.now()}`,
+    projectCode,
+    mineComplexCode: complex.code,
+    mineComplexName: complex.fullName,
+    awardId: newAward.id,
+    problemStatementId: newAward.problemStatementId,
+    problemStatementCode: newAward.problemStatementCode,
+    name: newAward.workTitle,
+    vendorId: newAward.vendorId,
+    vendorName: newAward.vendorName,
+    department: newAward.department,
+    projectComplex: complex.fullName,
+    projectHead: `${complex.name} Head`,
+    projectManager: newAward.responsibleOfficer,
+    approvedValueCr: Number((newAward.totalContractValue / 10000000).toFixed(2)),
+    actualExpenditureCr: 0,
+    startDate: new Date().toISOString().substring(0, 10),
+    targetCompletionDate: '2026-12-31',
+    currentStage: 'Project Initiation',
+    health: 'On Track',
+    physicalProgressPct: 0,
+    financialProgressPct: 0,
+    milestones: [
+      {
+        id: `m-${Date.now()}-1`,
+        title: 'Project Initiation & Kickoff',
+        stage: 'Project Initiation',
+        plannedStartDate: new Date().toISOString().substring(0, 10),
+        plannedFinishDate: '2026-06-30',
+        progressPct: 0,
+        status: 'On Track',
+        responsibleOfficer: newAward.responsibleOfficer,
+        vendorResponsibility: 'Project Lead',
+        delayDays: 0,
+        deliverables: 'Charter and baseline plan.',
+      },
+    ],
+    slaRecords: [],
+    warrantyExpiryDate: '2027-12-31',
+    amcActive: true,
+    performanceScore: 100,
+    reports: [],
+  };
+
+  db.projects.unshift(newProject);
+
+  const act = db.addActivity(newAward.responsibleOfficer, 'approving_authority', 'AWARD_OF_WORK_SANCTIONED', newAward.awardCode, `Award of work ${newAward.awardCode} issued for ${complex.name}.`);
   broadcastSSE('activity', act);
 
-  res.json({ success: true, data: vendor, ratingHistory: db.vendorRatings[id] });
+  res.status(201).json({ success: true, data: newAward });
 });
 
-// 18. Innovation Score Config
-app.get('/api/innovation-score-weights', (_req: Request, res: Response) => {
-  res.json({ success: true, data: db.innovationScoreWeights });
-});
-
-app.put('/api/innovation-score-weights', (req: Request, res: Response) => {
-  const { weights } = req.body;
-  if (weights) {
-    db.innovationScoreWeights = weights;
-    res.json({ success: true, data: db.innovationScoreWeights });
-  } else {
-    res.status(400).json({ success: false, message: 'Weights required' });
+// 7. Mine-Wise Project Execution (Section 11)
+app.get('/api/projects', (req: Request, res: Response) => {
+  const { mineComplex, complex } = req.query;
+  let list = [...db.projects];
+  const targetComplex = (mineComplex || complex) as string;
+  if (targetComplex && targetComplex !== 'ALL' && targetComplex !== 'All') {
+    list = list.filter((p) => p.mineComplexCode === targetComplex);
   }
+  res.json({ success: true, data: list });
 });
 
-// 19. AI Plain Problem to Structured Statement Converter
-app.post('/api/ai/convert-problem', async (req: Request, res: Response) => {
-  try {
-    const { rawProblemText } = req.body;
-    const structured = await convertPlainProblemToStructured(rawProblemText || '');
-    res.json({ success: true, data: structured });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+// 8. Vendors & System Config
+app.get('/api/vendors', (_req: Request, res: Response) => {
+  res.json({ success: true, data: db.vendors });
 });
 
-// 20. AI Problem-to-Solution Engine
-app.post('/api/ai/problem-solution-engine', async (req: Request, res: Response) => {
-  try {
-    const { queryText } = req.body;
-    const result = await generateProblemToSolutionEngine(queryText || '');
-    res.json({ success: true, data: result });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+app.get('/api/evaluation-parameters', (_req: Request, res: Response) => {
+  res.json({ success: true, data: db.evaluationParameters });
 });
 
-// 21. AI Idea Duplicate Detector
-app.post('/api/ai/check-duplicates', async (req: Request, res: Response) => {
-  try {
-    const { title, description } = req.body;
-    const match = await detectIdeaDuplicates(title || '', description || '', db.ideas);
-    res.json({ success: true, match });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+app.get('/api/notifications', (_req: Request, res: Response) => {
+  res.json({ success: true, data: db.notifications });
 });
 
-// 22. AI Idea Innovation Score Calculator
-app.post('/api/ai/calculate-innovation-score', (req: Request, res: Response) => {
-  try {
-    const { ideaData } = req.body;
-    const scoreBreakdown = calculateInnovationScore(ideaData, db.innovationScoreWeights);
-    res.json({ success: true, data: scoreBreakdown });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+app.get('/api/activities', (_req: Request, res: Response) => {
+  res.json({ success: true, data: db.activityLogs.slice(0, 50) });
 });
 
 // Vite Middleware Mounting (for Dev) & Static Serving (for Prod)
@@ -1019,7 +787,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[NMDC Portal Server] Running on http://0.0.0.0:${PORT}`);
+    console.log(`[NMDC Production Portal Server] Running on http://0.0.0.0:${PORT}`);
   });
 }
 

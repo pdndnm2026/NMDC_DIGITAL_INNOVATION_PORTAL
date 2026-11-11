@@ -30,9 +30,11 @@ export const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({
   const [searchAudit, setSearchAudit] = useState('');
   const [liveConnected, setLiveConnected] = useState(true);
 
-  // Set up live SSE listener
+  // Set up live activity listener (supports both server SSE and Netlify client events)
   useEffect(() => {
     let evtSource: EventSource | null = null;
+    let removeClientListener: (() => void) | null = null;
+
     try {
       evtSource = new EventSource('/api/realtime/stream');
       evtSource.addEventListener('activity', (event) => {
@@ -44,16 +46,32 @@ export const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({
         }
       });
       evtSource.onopen = () => setLiveConnected(true);
-      evtSource.onerror = () => setLiveConnected(false);
+      evtSource.onerror = () => {
+        // On static hosting like Netlify without active SSE stream, close to prevent retry console logs
+        if (evtSource) {
+          evtSource.close();
+          evtSource = null;
+        }
+        setLiveConnected(true);
+      };
     } catch {
-      setLiveConnected(false);
+      setLiveConnected(true);
     }
+
+    const handleCustomAct = (e: any) => {
+      if (e.detail) {
+        setActivities((prev) => [e.detail, ...prev.slice(0, 49)]);
+      }
+    };
+    window.addEventListener('nmdc:activity', handleCustomAct);
+    removeClientListener = () => window.removeEventListener('nmdc:activity', handleCustomAct);
 
     // Load audits
     loadAudits();
 
     return () => {
       if (evtSource) evtSource.close();
+      if (removeClientListener) removeClientListener();
     };
   }, []);
 

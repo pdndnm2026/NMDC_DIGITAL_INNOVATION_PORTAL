@@ -1,32 +1,35 @@
 import React, { useState } from 'react';
-import { Proposal, ProblemStatement, UserRole, User, EvaluationParameter } from '../types/index.js';
+import { Proposal, ProblemStatement, UserRole, User, EvaluationParameter, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
 import { 
   FileText, 
   Search, 
   Filter, 
-  Sparkles, 
   Award, 
-  Layers, 
   CheckCircle2, 
   Clock, 
   IndianRupee, 
-  TrendingUp,
-  ShieldCheck,
-  Eye,
-  ArrowRight,
-  ChevronRight
+  ShieldCheck, 
+  Eye, 
+  Lock, 
+  Download, 
+  Printer, 
+  ChevronRight,
+  Building,
+  Check,
+  X,
+  MapPin,
+  Building2
 } from 'lucide-react';
-import { fetchApi } from '../utils/api.js';
 
 interface ProposalsViewProps {
   proposals: Proposal[];
   problemStatements: ProblemStatement[];
   currentRole: UserRole;
   currentUser: User | null;
-  parameters: EvaluationParameter[];
+  activeComplexCode?: MineComplexCode | 'ALL';
+  parameters?: EvaluationParameter[];
   onOpenEvaluate: (proposal: Proposal) => void;
   onOpenCompare: (problemStatement: ProblemStatement) => void;
-  onOpenAiAnalysis: (proposal: Proposal) => void;
   onRefreshData: () => void;
 }
 
@@ -35,20 +38,44 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
   problemStatements,
   currentRole,
   currentUser,
-  parameters,
+  activeComplexCode = 'ALL',
+  parameters = [],
   onOpenEvaluate,
   onOpenCompare,
-  onOpenAiAnalysis,
   onRefreshData,
 }) => {
   const [selectedPsFilter, setSelectedPsFilter] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
   const [search, setSearch] = useState('');
   const [activeProposalDetail, setActiveProposalDetail] = useState<Proposal | null>(null);
 
+  const isVendor = currentRole === 'vendor';
+
   const filtered = proposals.filter((p) => {
-    if (selectedPsFilter !== 'All' && p.problemStatementCode !== selectedPsFilter && p.problemStatementId !== selectedPsFilter) return false;
-    if (selectedStatus !== 'All' && p.status !== selectedStatus) return false;
+    // 1. Vendor confidentiality constraint: vendor only sees own offers
+    if (isVendor) {
+      const isOwner = (currentUser?.vendorId && p.vendorId === currentUser.vendorId) ||
+                      (currentUser?.id && p.vendorId === currentUser.id);
+      if (!isOwner) return false;
+    }
+
+    // 2. Complex filter
+    if (selectedComplexFilter !== 'ALL' && p.mineComplexCode && p.mineComplexCode !== selectedComplexFilter) {
+      return false;
+    }
+
+    // 3. Problem statement filter
+    if (selectedPsFilter !== 'All' && p.problemStatementCode !== selectedPsFilter && p.problemStatementId !== selectedPsFilter) {
+      return false;
+    }
+
+    // 4. Status filter
+    if (selectedStatus !== 'All' && p.status !== selectedStatus) {
+      return false;
+    }
+
+    // 5. Search query
     if (search.trim()) {
       const q = search.toLowerCase();
       return (
@@ -60,350 +87,481 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
     return true;
   });
 
-  const handleConvertProposalToProject = async (prop: Proposal) => {
-    if (!confirm(`Are you sure you want to approve PoC and sanction Project for ${prop.vendorName} on ${prop.proposalCode}?`)) return;
-
-    try {
-      await fetchApi('/api/projects/convert-proposal', {
-        method: 'POST',
-        body: JSON.stringify({
-          proposalId: prop.id,
-          projectName: `${prop.problemStatementTitle} Deployment (${prop.vendorName})`,
-          projectManager: 'Dr. Amitabh Verma (GM - Mining)',
-        }),
-      });
-      alert('Project successfully created and sanctioned for PoC execution!');
-      onRefreshData();
-    } catch (e: any) {
-      alert(`Error creating project: ${e.message}`);
-    }
-  };
-
-  const getStatusColor = (status: Proposal['status']) => {
-    switch (status) {
-      case 'PoC Approved':
-        return 'text-emerald-700 bg-emerald-50 border-emerald-300';
-      case 'PoC Recommended':
-        return 'text-blue-700 bg-blue-50 border-blue-300';
-      case 'Technical Shortlisted':
-      case 'Commercial Review':
-      case 'Under Technical Review':
-        return 'text-amber-700 bg-amber-50 border-amber-300';
-      case 'Rejected':
-        return 'text-rose-700 bg-rose-50 border-rose-300';
-      default:
-        return 'text-slate-700 bg-slate-100 border-slate-300';
-    }
-  };
+  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
+    <div className="space-y-6 pb-16">
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-mono text-blue-700 font-semibold tracking-wider uppercase">
-            VENDOR SOLUTIONS & BUDGETARY OFFERS
-          </span>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-0.5">
-            Technical & Commercial Proposal Registry
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono text-emerald-800 font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              VENDOR BUDGETARY OFFERS & TECHNICAL EVALUATION · SECTIONS 10, 12 & 13
+            </span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-500 font-medium text-xs">
+              {selectedComplexFilter === 'ALL' ? 'All Complexes' : activeComplexObj?.name}: {filtered.length} Submissions
+            </span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
+            Vendor Solutions, Budgetary Offers & Evaluation
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Review detailed solution architectures, itemized budgets, weighted evaluation scores, and PoC approvals.
+            Technical proposal scrutiny, itemized cost comparisons, compliance recording and PoC recommendations.
           </p>
         </div>
+
+        {/* Global Compare CTA */}
+        {problemStatements.length > 0 && !isVendor && (
+          <button
+            onClick={() => {
+              const psWithOffers = problemStatements.find((p) => proposals.some((prop) => prop.problemStatementId === p.id)) || problemStatements[0];
+              onOpenCompare(psWithOffers);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs text-xs transition-colors shrink-0"
+          >
+            <FileText className="w-4 h-4 text-amber-400" />
+            <span>Open Comparative Statement Matrix</span>
+          </button>
+        )}
       </div>
 
-      {/* Filters Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by proposal ID, vendor, challenge..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
+      {/* Complex Filter Pills */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => setSelectedComplexFilter('ALL')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+            selectedComplexFilter === 'ALL'
+              ? 'bg-slate-900 text-white shadow-2xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>All 4 Complexes</span>
+        </button>
 
-          <div>
-            <select
-              value={selectedPsFilter}
-              onChange={(e) => setSelectedPsFilter(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+          const isActive = selectedComplexFilter === complex.code;
+          const count = proposals.filter(p => p.mineComplexCode === complex.code).length;
+          return (
+            <button
+              key={complex.code}
+              onClick={() => setSelectedComplexFilter(complex.code)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                isActive
+                  ? 'bg-emerald-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
             >
-              <option value="All">All Challenges</option>
-              {problemStatements.map((ps) => (
-                <option key={ps.id} value={ps.code}>
-                  {ps.code}: {ps.title.substring(0, 36)}...
-                </option>
-              ))}
-            </select>
-          </div>
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{complex.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-          <div>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Submitted">Submitted (New)</option>
-              <option value="Under Technical Review">Under Technical Review</option>
-              <option value="Technical Shortlisted">Technical Shortlisted</option>
-              <option value="Commercial Review">Commercial Review</option>
-              <option value="PoC Recommended">PoC Recommended</option>
-              <option value="PoC Approved">PoC Approved</option>
-              <option value="Rejected">Rejected</option>
-            </select>
-          </div>
+      {/* Filter / Search Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by proposal code, vendor name, or title..."
+            className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+          />
         </div>
 
-        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
-          <span>Showing <strong>{filtered.length}</strong> proposals</span>
-          <span className="font-mono text-slate-700">
-            Total Pipeline Value: ₹ {(filtered.reduce((acc, p) => acc + (p.costBreakdown?.totalCostInclGst || 0), 0) / 10000000).toFixed(2)} Cr
-          </span>
+        <div className="flex items-center gap-2">
+          <Filter className="w-3.5 h-3.5 text-slate-400" />
+          <select
+            value={selectedPsFilter}
+            onChange={(e) => setSelectedPsFilter(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700"
+          >
+            <option value="All">All Problem Statements</option>
+            {problemStatements.map((ps) => (
+              <option key={ps.id} value={ps.code}>{ps.code} - {ps.title.slice(0, 32)}...</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700"
+          >
+            <option value="All">All Evaluation Statuses</option>
+            <option value="Submitted">Submitted (Locked)</option>
+            <option value="Under Technical Evaluation">Under Technical Evaluation</option>
+            <option value="Technically Qualified">Technically Qualified</option>
+            <option value="Technically Disqualified">Technically Disqualified</option>
+            <option value="PoC Recommended">PoC Recommended</option>
+            <option value="Award Recommended">Award Recommended</option>
+          </select>
         </div>
       </div>
 
-      {/* Proposals List Table / Cards */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
-                <th className="p-3.5">Proposal Code</th>
-                <th className="p-3.5">Vendor & Challenge</th>
-                <th className="p-3.5 text-right">Total Offer (₹)</th>
-                <th className="p-3.5 text-center">Tech / Comm</th>
-                <th className="p-3.5 text-center">Status</th>
-                <th className="p-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((prop) => {
-                const ps = problemStatements.find((p) => p.id === prop.problemStatementId || p.code === prop.problemStatementCode);
-                return (
-                  <tr key={prop.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3.5 font-mono font-bold text-blue-700 whitespace-nowrap">
-                      {prop.proposalCode}
-                      <span className="block font-normal text-slate-400 text-[10px]">
-                        {new Date(prop.submittedAt).toLocaleDateString()}
-                      </span>
-                    </td>
-
-                    <td className="p-3.5 max-w-sm">
-                      <div className="font-bold text-slate-900">{prop.vendorName}</div>
-                      <div className="text-[11px] text-slate-500 truncate" title={prop.problemStatementTitle}>
-                        <strong className="font-mono text-slate-700">{prop.problemStatementCode}</strong> · {prop.problemStatementTitle}
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">
-                        Arch: {prop.architectureType} · Timeline: {prop.timelineMonths} mo
-                      </div>
-                    </td>
-
-                    <td className="p-3.5 text-right font-mono tabular-nums whitespace-nowrap">
-                      <div className="font-bold text-slate-900">
-                        ₹ {((prop.costBreakdown?.totalCostInclGst || 0) / 10000000).toFixed(2)} Cr
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        PoC: ₹ {((prop.costBreakdown?.pocCost || 0) / 100000).toFixed(1)} L
-                      </div>
-                    </td>
-
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      {prop.technicalScore ? (
-                        <div className="space-y-0.5">
-                          <span className="font-mono font-bold text-blue-700">
-                            {prop.technicalScore}
-                          </span>
-                          <span className="text-slate-400"> / </span>
-                          <span className="font-mono font-bold text-emerald-700">
-                            {prop.commercialScore}
-                          </span>
-                          <span className="block text-[10px] text-slate-400 font-mono">
-                            Comp: {prop.compositeScore}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">Pending Review</span>
-                      )}
-                    </td>
-
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusColor(prop.status)}`}>
-                        {prop.status}
-                      </span>
-                    </td>
-
-                    <td className="p-3.5 text-right whitespace-nowrap space-x-1.5">
-                      <button
-                        onClick={() => setActiveProposalDetail(prop)}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-medium transition-colors"
-                        title="View Full Offer Details"
-                      >
-                        Details
-                      </button>
-
-                      <button
-                        onClick={() => onOpenAiAnalysis(prop)}
-                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-xs font-semibold transition-colors inline-flex items-center gap-1"
-                        title="Run Gemini AI Proposal Breakdown"
-                      >
-                        <Sparkles className="w-3 h-3 text-blue-600" />
-                        <span>AI Review</span>
-                      </button>
-
-                      {(currentRole === 'reviewer' || currentRole === 'admin') && (
-                        <button
-                          onClick={() => onOpenEvaluate(prop)}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded text-xs font-semibold transition-colors"
-                        >
-                          Score
-                        </button>
-                      )}
-
-                      {currentRole === 'admin' && prop.status !== 'PoC Approved' && (
-                        <button
-                          onClick={() => handleConvertProposalToProject(prop)}
-                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-xs font-semibold shadow-2xs transition-colors"
-                          title="Convert to Live Implementation Project"
-                        >
-                          Sanction PoC
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Proposals Grid */}
+      {filtered.length === 0 ? (
+        <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-2">
+          <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="font-semibold text-slate-700 text-sm">
+            {proposals.length === 0
+              ? 'No vendor offers received.'
+              : selectedComplexFilter !== 'ALL'
+              ? 'No budgetary offers have been received for this complex.'
+              : 'No records available.'}
+          </p>
+          <p className="text-slate-400 text-xs">
+            {isVendor
+              ? 'You have not submitted budgetary offers yet. Browse open opportunities to submit.'
+              : 'Vendor budgetary offers and technical proposals will appear here as they are received.'}
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((prop) => {
+            const totalCr = (prop.costBreakdown?.totalEstimatedCost || 0) / 10000000;
+            const basicCr = (prop.costBreakdown?.subtotalCost || 0) / 10000000;
+            const compliance = prop.technicalComplianceStatus || 'Under Review';
+            const relatedPs = problemStatements.find((p) => p.id === prop.problemStatementId || p.code === prop.problemStatementCode);
 
-      {/* Detailed Proposal Drawer */}
-      {activeProposalDetail && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end">
-          <div className="w-full max-w-3xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
-            {/* Header */}
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
-              <div>
-                <span className="text-[10px] font-mono text-blue-400 font-semibold tracking-wider">
-                  PROPOSAL DOSSIER & BUDGETARY BREAKDOWN
-                </span>
-                <h3 className="font-bold text-sm text-slate-100 leading-snug">
-                  {activeProposalDetail.proposalCode}: {activeProposalDetail.vendorName}
-                </h3>
-              </div>
-              <button onClick={() => setActiveProposalDetail(null)} className="p-1.5 text-slate-400 hover:text-white rounded-md">
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 text-xs space-y-6">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Problem Statement:</span>
-                  <span className="font-bold text-slate-900">{activeProposalDetail.problemStatementCode}</span>
-                </div>
-                <h4 className="font-bold text-slate-900 text-sm leading-snug">
-                  {activeProposalDetail.problemStatementTitle}
-                </h4>
-              </div>
-
-              {/* Technical Architecture */}
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-900 text-xs">Technical Solution Description</h4>
-                <p className="text-slate-700 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg shadow-2xs">
-                  {activeProposalDetail.solutionDescription}
-                </p>
-                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-600">
-                  <div>Architecture: <strong className="text-slate-800">{activeProposalDetail.architectureType}</strong></div>
-                  <div>Timeline: <strong className="text-slate-800">{activeProposalDetail.timelineMonths} Months</strong></div>
-                  <div>Warranty: <strong className="text-slate-800">{activeProposalDetail.warrantyPeriodYears} Years</strong></div>
-                  <div>Hardware: <strong className="text-slate-800">{activeProposalDetail.hardwareSpecs}</strong></div>
-                </div>
-              </div>
-
-              {/* Budgetary Offer Schedule */}
-              <div className="space-y-3">
-                <h4 className="font-bold text-slate-900 text-xs">Itemized Budgetary Offer Schedule (₹ INR)</h4>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 divide-y divide-slate-200/80">
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Proof of Concept (PoC) Cost:</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.pocCost?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Pilot Deployment Cost:</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.pilotCost?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Hardware & Edge Equipment:</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.hardwareCost?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Software Development & Models:</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.softwareCost?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Integration & SCADA Tap:</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.integrationCost?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Annual Maintenance (AMC / yr):</span>
-                    <span className="font-mono tabular-nums font-semibold">₹ {activeProposalDetail.costBreakdown?.amcCostPerYear?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5 font-bold text-slate-800">
-                    <span>Subtotal (Excl. Taxes):</span>
-                    <span className="font-mono tabular-nums">₹ {activeProposalDetail.costBreakdown?.totalExclGst?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5 font-bold text-slate-800">
-                    <span>GST (18%):</span>
-                    <span className="font-mono tabular-nums">₹ {activeProposalDetail.costBreakdown?.gstAmount?.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between py-2 text-sm font-bold text-blue-900 bg-blue-50 px-2 rounded-lg mt-1">
-                    <span>Total Project Cost (Incl. GST):</span>
-                    <span className="font-mono tabular-nums">₹ {activeProposalDetail.costBreakdown?.totalCostInclGst?.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Business Case */}
-              <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-2">
-                <h4 className="font-bold text-emerald-950 text-xs">Projected Business Case & ROI</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px] text-emerald-900">
-                  <div>Annual Savings: <strong className="font-mono">₹ {((activeProposalDetail.businessCase?.expectedSavingsAnnual || 0) / 10000000).toFixed(2)} Cr</strong></div>
-                  <div>Availability Gain: <strong className="font-mono">+{activeProposalDetail.businessCase?.availabilityImprovementPct}%</strong></div>
-                  <div>Payback Period: <strong className="font-mono">{activeProposalDetail.businessCase?.paybackPeriodMonths} Months</strong></div>
-                </div>
-                <p className="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/60 leading-relaxed">
-                  {activeProposalDetail.businessCase?.safetyBenefits}
-                </p>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-              <button
-                onClick={() => {
-                  const p = activeProposalDetail;
-                  setActiveProposalDetail(null);
-                  onOpenAiAnalysis(p);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold"
+            return (
+              <div
+                key={prop.id}
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between p-5 space-y-4"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Deep AI Analysis</span>
-              </button>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                      {prop.isLocked && <Lock className="w-3 h-3 text-emerald-700" />}
+                      <span>{prop.proposalCode}</span>
+                    </span>
+
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                        compliance === 'Compliant'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : compliance === 'Partially Compliant'
+                          ? 'bg-amber-50 text-amber-800 border-amber-300'
+                          : 'bg-blue-50 text-blue-800 border-blue-200'
+                      }`}
+                    >
+                      {compliance} {prop.technicalMarks ? `(${prop.technicalMarks}/100)` : ''}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-blue-700 uppercase block">
+                      {prop.problemStatementCode} {prop.mineComplexCode ? `· ${prop.mineComplexCode}` : ''}
+                    </span>
+                    <h3 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1 mt-0.5">
+                      {prop.problemStatementTitle}
+                    </h3>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Responding Vendor:</span>
+                      <strong className="text-slate-800 truncate max-w-[160px]">{prop.vendorName}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Basic Subtotal:</span>
+                      <span className="font-mono text-slate-700">₹ {basicCr.toFixed(2)} Cr</span>
+                    </div>
+                    <div className="flex items-center justify-between font-bold text-blue-900 border-t border-slate-200 pt-1">
+                      <span>Total Offer (Incl GST):</span>
+                      <span className="font-mono text-xs">₹ {totalCr.toFixed(2)} Cr</span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">
+                    {prop.proposedSolution || prop.understandingOfRequirement}
+                  </p>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                    <span>Delivery: {prop.deliveryPeriodWeeks} Weeks</span>
+                    <span>Warranty: {prop.warrantyMonths} Months</span>
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">Rev #{prop.revisionNumber} ({prop.submittedAt ? prop.submittedAt.slice(0, 10) : ''})</span>
+                    <button
+                      onClick={() => setActiveProposalDetail(prop)}
+                      className="text-blue-700 hover:text-blue-800 font-semibold text-xs flex items-center gap-1"
+                    >
+                      <span>Full Cost & Tech Specs</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {/* Evaluate Button for Technical Evaluators & Approvers */}
+                    {(currentRole === 'tech_evaluator' || currentRole === 'approving_authority' || currentRole === 'admin') && (
+                      <button
+                        onClick={() => onOpenEvaluate(prop)}
+                        className="py-1.5 px-3 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Evaluate Tech</span>
+                      </button>
+                    )}
+
+                    {/* Compare Button */}
+                    {relatedPs && !isVendor && (
+                      <button
+                        onClick={() => onOpenCompare(relatedPs)}
+                        className="py-1.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-1 shadow-2xs"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Compare (L1)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Detailed Proposal Modal */}
+      {activeProposalDetail && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden text-xs text-slate-800 animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-emerald-800 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    {activeProposalDetail.proposalCode}
+                  </span>
+                  <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {activeProposalDetail.status}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="font-bold text-slate-800">{activeProposalDetail.vendorName}</span>
+                </div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-1">
+                  Budgetary Offer & Proposal: {activeProposalDetail.problemStatementCode} - {activeProposalDetail.problemStatementTitle}
+                </h2>
+              </div>
               <button
                 onClick={() => setActiveProposalDetail(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg"
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                Close Dossier
+                <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+              {/* Part A: Technical Proposal Details */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-1.5 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">A</span>
+                  <span>Part A: Technical Proposal & Architecture</span>
+                </h4>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">1. Understanding of Operational Requirement:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150 leading-relaxed">
+                    {activeProposalDetail.understandingOfRequirement}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">2. Proposed Solution & Engineering Methodology:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150 leading-relaxed">
+                    {activeProposalDetail.proposedSolution}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">Technical Specifications:</span>
+                    <p className="text-slate-600 font-mono text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                      {activeProposalDetail.technicalSpecifications || 'Standard heavy industrial grade specifications.'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">System Architecture:</span>
+                    <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                      {activeProposalDetail.systemArchitecture || 'On-premise edge architecture with redundant controller.'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">Equipment Details:</span>
+                    <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                      {activeProposalDetail.equipmentDetails || 'Industrial edge displays and telemetry nodes.'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-700 block mb-0.5">Software & Database:</span>
+                    <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                      {activeProposalDetail.softwareDetails || 'Enterprise server software with REST API integration.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">Technical Deviations (if any):</span>
+                  <p className="text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-150 font-medium">
+                    {activeProposalDetail.technicalDeviations || 'None. Fully compliant with specifications.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Part B: Itemized Costing Table */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-1.5 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 font-bold text-xs flex items-center justify-center">B</span>
+                  <span>Part B: Itemized Commercial Costing Schedule</span>
+                </h4>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-100 font-bold text-slate-700">
+                      <tr>
+                        <th className="py-2 px-3">Item Component</th>
+                        <th className="py-2 px-3 text-right">Cost (₹)</th>
+                        <th className="py-2 px-3 text-right">In Lakhs</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      <tr>
+                        <td className="py-1.5 px-3">Equipment Cost</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.equipmentCost || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {((activeProposalDetail.costBreakdown?.equipmentCost || 0) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">Hardware & Telemetry Cost</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.hardwareCost || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {((activeProposalDetail.costBreakdown?.hardwareCost || 0) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">Software Platform & Licenses</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.softwareCost || 0) + (activeProposalDetail.costBreakdown?.licenceCost || 0)).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {(((activeProposalDetail.costBreakdown?.softwareCost || 0) + (activeProposalDetail.costBreakdown?.licenceCost || 0)) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">Installation & Commissioning</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.installationCost || 0) + (activeProposalDetail.costBreakdown?.commissioningCost || 0)).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {(((activeProposalDetail.costBreakdown?.installationCost || 0) + (activeProposalDetail.costBreakdown?.commissioningCost || 0)) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">System Integration & Training</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.integrationCost || 0) + (activeProposalDetail.costBreakdown?.trainingCost || 0)).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {(((activeProposalDetail.costBreakdown?.integrationCost || 0) + (activeProposalDetail.costBreakdown?.trainingCost || 0)) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">Freight, Transit Insurance & Incidental</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.freightCost || 0) + (activeProposalDetail.costBreakdown?.otherCharges || 0)).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {(((activeProposalDetail.costBreakdown?.freightCost || 0) + (activeProposalDetail.costBreakdown?.otherCharges || 0)) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1.5 px-3">Annual Maintenance Contract (AMC / Year)</td>
+                        <td className="py-1.5 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.amcCostPerYear || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-500">₹ {((activeProposalDetail.costBreakdown?.amcCostPerYear || 0) / 100000).toFixed(2)} L</td>
+                      </tr>
+                      <tr className="bg-slate-50 font-semibold">
+                        <td className="py-2 px-3">Basic Subtotal (Excl. Taxes)</td>
+                        <td className="py-2 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.subtotalCost || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.subtotalCost || 0) / 10000000).toFixed(4)} Cr</td>
+                      </tr>
+                      <tr className="bg-slate-50 font-semibold">
+                        <td className="py-2 px-3">GST (@ {activeProposalDetail.costBreakdown?.gstRate || 18}%)</td>
+                        <td className="py-2 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.gstAmount || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.gstAmount || 0) / 10000000).toFixed(4)} Cr</td>
+                      </tr>
+                      <tr className="bg-blue-100/60 font-bold text-blue-950 text-sm">
+                        <td className="py-2.5 px-3">Total Estimated Contract Value (Incl. GST)</td>
+                        <td className="py-2.5 px-3 text-right font-mono">₹ {(activeProposalDetail.costBreakdown?.totalEstimatedCost || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 text-right font-mono">₹ {((activeProposalDetail.costBreakdown?.totalEstimatedCost || 0) / 10000000).toFixed(2)} Cr</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Part C: Commercial Conditions */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-1.5 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 font-bold text-xs flex items-center justify-center">C</span>
+                  <span>Part C: Commercial Terms & Conditions</span>
+                </h4>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div>
+                    <span className="text-slate-500 text-[11px] block">Delivery Period:</span>
+                    <strong className="text-slate-800 block mt-0.5">{activeProposalDetail.deliveryPeriodWeeks} Weeks</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[11px] block">Warranty Period:</span>
+                    <strong className="text-slate-800 block mt-0.5">{activeProposalDetail.warrantyMonths} Months</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[11px] block">Offer Validity:</span>
+                    <strong className="text-slate-800 block mt-0.5">{activeProposalDetail.commercialConditions?.offerValidityDays || 120} Days</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[11px] block">AMC Duration:</span>
+                    <strong className="text-slate-800 block mt-0.5">{activeProposalDetail.commercialConditions?.amcYears || 3} Years</strong>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">Payment Terms:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                    {activeProposalDetail.commercialConditions?.paymentTerms || 'Standard progressive milestone payments.'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">Price Basis & Logistics:</span>
+                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                    {activeProposalDetail.commercialConditions?.priceBasis || 'FOR Destination site.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-slate-500 text-[11px]">
+                Offer Status: {activeProposalDetail.isLocked ? 'Locked (Final Submission)' : 'Draft'}
+              </span>
+
+              <div className="flex items-center gap-2">
+                {(currentRole === 'tech_evaluator' || currentRole === 'approving_authority' || currentRole === 'admin') && (
+                  <button
+                    onClick={() => {
+                      const p = activeProposalDetail;
+                      setActiveProposalDetail(null);
+                      onOpenEvaluate(p);
+                    }}
+                    className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl shadow-xs"
+                  >
+                    Conduct Technical Evaluation
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setActiveProposalDetail(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-xl"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
