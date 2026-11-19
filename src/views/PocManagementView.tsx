@@ -1,45 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { PocRecord, UserRole, User, PocStatus, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
+import {
+  PocRecord,
+  UserRole,
+  User,
+  PocStatus,
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS
+} from '../types/index.js';
 import { 
   Layers, 
-  Search, 
-  Filter, 
   CheckCircle2, 
-  Clock, 
-  AlertTriangle, 
   Building2, 
-  IndianRupee, 
   ArrowRight,
-  ShieldCheck, 
-  Calendar, 
-  FileText, 
   Printer, 
   X, 
-  Upload, 
-  Plus,
-  MapPin
+  MapPin,
+  AlertCircle
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface PocManagementViewProps {
+  organisationalUnits?: MineComplex[];
   currentRole: UserRole;
   currentUser: User | null;
   activeComplexCode?: MineComplexCode | 'ALL';
+  showDemoData?: boolean;
   onRefreshData?: () => void;
 }
 
 export const PocManagementView: React.FC<PocManagementViewProps> = ({
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
   currentRole,
-  currentUser,
   activeComplexCode = 'ALL',
+  showDemoData = false,
   onRefreshData,
 }) => {
   const [pocs, setPocs] = useState<PocRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
-  const [search, setSearch] = useState('');
+  const [search] = useState('');
   const [selectedPocDetail, setSelectedPocDetail] = useState<PocRecord | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Status transition state
   const [updatingPoc, setUpdatingPoc] = useState<PocRecord | null>(null);
@@ -52,7 +55,7 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
 
   useEffect(() => {
     loadPocs();
-  }, [selectedStatus, selectedComplexFilter]);
+  }, [selectedStatus, selectedComplexFilter, showDemoData]);
 
   const loadPocs = async () => {
     setLoading(true);
@@ -62,7 +65,7 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
         : `/api/pocs?status=${selectedStatus}`;
       const res = await fetchApi<{ success: boolean; data: PocRecord[] }>(url);
       if (res.success && res.data) {
-        setPocs(res.data);
+        setPocs(showDemoData ? res.data : res.data.filter((p) => !p.isDemo));
       }
     } catch (e) {
       console.error('Failed to load PoCs:', e);
@@ -92,13 +95,14 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
       if (res.success) {
         setPocs(pocs.map((p) => (p.id === updatingPoc.id ? res.data : p)));
         setUpdatingPoc(null);
+        setErrorBanner(null);
         if (selectedPocDetail?.id === updatingPoc.id) {
           setSelectedPocDetail(res.data);
         }
         if (onRefreshData) onRefreshData();
       }
     } catch (e: any) {
-      alert(`Update error: ${e.message}`);
+      setErrorBanner(`Update error: ${e.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -131,7 +135,7 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
     return true;
   });
 
-  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
+  const activeComplexObj = organisationalUnits.find(c => c.code === selectedComplexFilter);
 
   return (
     <div className="space-y-6 pb-16">
@@ -144,7 +148,7 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
             </span>
             <span className="text-slate-400">·</span>
             <span className="text-slate-500 font-medium text-xs">
-              {selectedComplexFilter === 'ALL' ? 'All Complexes' : activeComplexObj?.name}: {filtered.length} Trials
+              {selectedComplexFilter === 'ALL' ? 'All 5 Units' : activeComplexObj?.name}: {filtered.length} Trials
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
@@ -156,7 +160,19 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
         </div>
       </div>
 
-      {/* Complex Filter Pills */}
+      {errorBanner && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorBanner}</span>
+          </div>
+          <button onClick={() => setErrorBanner(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Organisational Unit Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           onClick={() => setSelectedComplexFilter('ALL')}
@@ -167,10 +183,10 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>All 4 Complexes</span>
+          <span>All 5 Units</span>
         </button>
 
-        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+        {organisationalUnits.filter(c => c.activeStatus).map((complex) => {
           const isActive = selectedComplexFilter === complex.code;
           return (
             <button
@@ -183,7 +199,7 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
-              <span>{complex.name}</span>
+              <span>{complex.shortLabel || complex.name}</span>
             </button>
           );
         })}
@@ -254,17 +270,24 @@ export const PocManagementView: React.FC<PocManagementViewProps> = ({
                 className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between p-5 space-y-4"
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
-                      {poc.pocCode}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                        {poc.pocCode}
+                      </span>
+                      {poc.isDemo && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold">
+                          DEMO
+                        </span>
+                      )}
+                    </div>
 
                     <span
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded border shrink-0 ${
                         isSuccessful
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                           : isUnderTrial
-                          ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                          ? 'bg-blue-50 text-blue-800 border-blue-300'
                           : 'bg-purple-50 text-purple-800 border-purple-200'
                       }`}
                     >

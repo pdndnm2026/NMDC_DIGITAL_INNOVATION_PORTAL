@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { ProblemStatement, Vendor, CommercialItemCost, ProposalCommercialConditions } from '../types/index.js';
+import {
+  ProblemStatement,
+  BudgetaryOfferRequest,
+  Vendor,
+  CommercialItemCost,
+  ProposalCommercialConditions,
+  AttachmentFile,
+  BUDGETARY_DISCLAIMER_TEXT,
+} from '../types/index.js';
 import { 
   X, 
   ArrowRight, 
@@ -14,14 +22,16 @@ import {
   Lock,
   Paperclip,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  Upload
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface ProposalWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
-  problemStatement: ProblemStatement;
+  problemStatement?: ProblemStatement | null;
+  budgetaryRequest?: BudgetaryOfferRequest | null;
   vendor: Vendor | null;
   onSubmitSuccess: () => void;
 }
@@ -30,38 +40,14 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
   isOpen,
   onClose,
   problemStatement,
+  budgetaryRequest,
   vendor,
   onSubmitSuccess,
 }) => {
-  const effectiveVendor: Vendor = vendor || {
-    id: 'vnd-001',
-    name: 'MiningTech Dynamics Pvt Ltd',
-    legalEntity: 'Private Limited',
-    cin: 'U72200TG2018PTC125890',
-    pan: 'AABCM9012F',
-    gstin: '36AABCM9012F1Z4',
-    registeredAddress: 'Plot 42, Hitec City Phase 2, Madhapur, Hyderabad, Telangana - 500081',
-    website: 'https://miningtechdynamics.in',
-    yearEstablished: 2018,
-    companySize: '51-200',
-    msmeStatus: true,
-    startupStatus: false,
-    contactPerson: 'Ananya Deshmukh',
-    designation: 'Managing Director & CTO',
-    email: 'vendor@miningtech.in',
-    mobile: '+91 98230 44551',
-    areasOfExpertise: ['HEMM Telematics', 'Fleet Management', 'Industrial Automation'],
-    capabilities: ['Edge Computing', 'CAN-Bus Telemetry', 'Mine Dispatch Algorithm'],
-    miningExperienceYears: 8,
-    miningPsuExperience: 'Deployed fleet tracking at Coal India and Tata Steel',
-    majorCustomers: ['Coal India Limited', 'Tata Steel Mining'],
-    annualTurnoverCr: 24.5,
-    netWorthCr: 12.8,
-    status: 'Active',
-    performanceScore: 92,
-    documents: [],
-    createdAt: '2025-01-10T10:00:00Z',
-  };
+  const targetCode = problemStatement?.code || budgetaryRequest?.requestCode || '';
+  const targetTitle = problemStatement?.title || budgetaryRequest?.title || '';
+  const targetComplex = problemStatement?.projectComplex || budgetaryRequest?.mineComplexName || 'NMDC Unit';
+  const targetBudgetLabel = problemStatement?.indicativeBudget || (budgetaryRequest ? `₹ ${(budgetaryRequest.estimatedBudgetCr || 0).toFixed(2)} Cr` : 'Not Specified');
 
   const [activeTab, setActiveTab] = useState<'partA' | 'partB' | 'partC' | 'review'>('partA');
   const [submitting, setSubmitting] = useState(false);
@@ -71,7 +57,9 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
   // Part A: Technical Proposal
   // ---------------------------------------------------------------------------
   const [understandingOfRequirement, setUnderstandingOfRequirement] = useState(
-    `We have conducted a thorough engineering analysis of NMDC Problem Statement ${problemStatement.code} ("${problemStatement.title}"). Our technical solution directly addresses the operational bottlenecks at ${problemStatement.projectComplex}.`
+    targetCode
+      ? `Engineering response against NMDC ${targetCode} ("${targetTitle}") at ${targetComplex}.`
+      : ''
   );
   const [proposedSolution, setProposedSolution] = useState('');
   const [technicalSpecifications, setTechnicalSpecifications] = useState('');
@@ -79,34 +67,31 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
   const [softwareDetails, setSoftwareDetails] = useState('');
   const [systemArchitecture, setSystemArchitecture] = useState('On-Premise Industrial Edge with Redundant Central Server');
   const [scopeOfSupply, setScopeOfSupply] = useState('');
-  const [installationCommissioning, setInstallationCommissioning] = useState('Turnkey delivery and on-site installation by OEM certified engineers during planned maintenance intervals without production stoppage.');
-  const [integrationRequirements, setIntegrationRequirements] = useState('Requires standard industrial communication port (Modbus TCP / Profinet / OPC-UA) and database read access.');
-  const [implementationMethodology, setImplementationMethodology] = useState('4-Stage Methodology: Stage 1 Engineering & Site Survey, Stage 2 Hardware Supply & Assembly, Stage 3 Field Installation & Cold Commissioning, Stage 4 30-Day Hot Trial and Acceptance.');
+  const [installationCommissioning, setInstallationCommissioning] = useState('Turnkey delivery and on-site installation by OEM certified engineers during planned maintenance intervals.');
+  const [integrationRequirements, setIntegrationRequirements] = useState('Standard industrial communication port (Modbus TCP / Profinet / OPC-UA).');
+  const [implementationMethodology, setImplementationMethodology] = useState('4-Stage Methodology: Engineering Survey, Hardware Supply, Installation & Cold Commissioning, Acceptance Demonstration.');
   const [deliveryPeriodWeeks, setDeliveryPeriodWeeks] = useState<number>(12);
   const [warrantyMonths, setWarrantyMonths] = useState<number>(12);
-  const [amcScope, setAmcScope] = useState('Comprehensive 24x7 resident engineer support at mine site, quarterly preventive maintenance, and all hardware spares replacement.');
-  const [trainingScope, setTrainingScope] = useState('Hands-on certification for NMDC operating crew, electrical supervisors, and IT administrators.');
-  const [technicalDeviations, setTechnicalDeviations] = useState('None. Fully compliant with all specifications and statutory DGMS mining guidelines.');
-  const [supportingDocuments, setSupportingDocuments] = useState<{ name: string; size: string; type: string }[]>([
-    { name: 'Technical_Proposal_Detailed_Architecture.pdf', size: '3.8 MB', type: 'PDF' },
-    { name: 'Bill_of_Materials_Schedule_A.xlsx', size: '640 KB', type: 'XLSX' },
-  ]);
+  const [amcScope, setAmcScope] = useState('Preventive maintenance and hardware spares support as per NMDC SLA.');
+  const [trainingScope, setTrainingScope] = useState('Hands-on operational and maintenance training for NMDC engineers.');
+  const [technicalDeviations, setTechnicalDeviations] = useState('None. Fully compliant with specifications and DGMS guidelines.');
+  const [supportingDocuments, setSupportingDocuments] = useState<AttachmentFile[]>([]);
   const [newDocName, setNewDocName] = useState('');
 
   // ---------------------------------------------------------------------------
   // Part B: Commercial Proposal (Item-wise costing in ₹)
   // ---------------------------------------------------------------------------
-  const [equipmentCost, setEquipmentCost] = useState<number>(12000000); // 1.20 Cr
-  const [hardwareCost, setHardwareCost] = useState<number>(4500000);  // 45 Lakhs
-  const [softwareCost, setSoftwareCost] = useState<number>(3800000);  // 38 Lakhs
-  const [licenceCost, setLicenceCost] = useState<number>(1200000);    // 12 Lakhs
-  const [installationCost, setInstallationCost] = useState<number>(1100000); // 11 Lakhs
-  const [commissioningCost, setCommissioningCost] = useState<number>(850000); // 8.5 Lakhs
-  const [integrationCost, setIntegrationCost] = useState<number>(650000);     // 6.5 Lakhs
-  const [trainingCost, setTrainingCost] = useState<number>(400000);         // 4 Lakhs
-  const [freightCost, setFreightCost] = useState<number>(550000);           // 5.5 Lakhs
-  const [amcCostPerYear, setAmcCostPerYear] = useState<number>(1500000);     // 15 Lakhs
-  const [otherCharges, setOtherCharges] = useState<number>(200000);         // 2 Lakhs
+  const [equipmentCost, setEquipmentCost] = useState<number>(0);
+  const [hardwareCost, setHardwareCost] = useState<number>(0);
+  const [softwareCost, setSoftwareCost] = useState<number>(0);
+  const [licenceCost, setLicenceCost] = useState<number>(0);
+  const [installationCost, setInstallationCost] = useState<number>(0);
+  const [commissioningCost, setCommissioningCost] = useState<number>(0);
+  const [integrationCost, setIntegrationCost] = useState<number>(0);
+  const [trainingCost, setTrainingCost] = useState<number>(0);
+  const [freightCost, setFreightCost] = useState<number>(0);
+  const [amcCostPerYear, setAmcCostPerYear] = useState<number>(0);
+  const [otherCharges, setOtherCharges] = useState<number>(0);
   const [gstRate, setGstRate] = useState<number>(18);
 
   // Auto-calculated subtotals and totals
@@ -131,27 +116,47 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
   // ---------------------------------------------------------------------------
   const [offerValidityDays, setOfferValidityDays] = useState<number>(120);
   const [paymentTerms, setPaymentTerms] = useState(
-    '20% Advance against Bank Guarantee, 60% on progressive material delivery at NMDC Central Stores, 20% on final commissioning and 30-day performance acceptance demonstration.'
+    '20% Advance against Bank Guarantee, 60% on progressive delivery, 20% on commissioning and acceptance.'
   );
   const [amcYears, setAmcYears] = useState<number>(3);
   const [priceBasis, setPriceBasis] = useState(
-    `FOR Destination ${problemStatement.projectComplex} (Inclusive of packing, forwarding, transit insurance, and freight).`
+    `FOR Destination ${targetComplex} (Inclusive of packing, forwarding, transit insurance, and freight).`
   );
   const [taxesAndDuties, setTaxesAndDuties] = useState(
-    'GST at 18% extra as applicable at time of invoicing. Any statutory variation on government account shall be to NMDC account.'
+    'GST extra as applicable at time of invoicing.'
   );
   const [otherCommercialConditions, setOtherCommercialConditions] = useState(
-    'Performance Bank Guarantee (PBG) of 5% of contract value valid for warranty period plus 60 days claim period shall be furnished within 21 days of LOA issuance.'
+    'Performance Bank Guarantee (PBG) of 5% of contract value valid for warranty period plus 60 days claim period.'
   );
 
-  if (!isOpen) return null;
+  if (!isOpen || (!problemStatement && !budgetaryRequest)) return null;
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const added: AttachmentFile[] = files.map((file) => {
+      const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+      const sizeStr = file.size >= 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+      return {
+        name: file.name,
+        size: sizeStr,
+        type: ext,
+        mediaKind: ['PNG', 'JPG', 'JPEG'].includes(ext) ? 'image' : 'document',
+        url: URL.createObjectURL(file),
+      };
+    });
+    setSupportingDocuments((prev) => [...prev, ...added]);
+    e.target.value = '';
+  };
 
   const handleAddDoc = () => {
     if (!newDocName.trim()) return;
     const ext = newDocName.split('.').pop()?.toUpperCase() || 'FILE';
     setSupportingDocuments([
       ...supportingDocuments,
-      { name: newDocName.trim(), size: '1.2 MB', type: ext },
+      { name: newDocName.trim(), size: 'Reference File', type: ext, mediaKind: 'document' },
     ]);
     setNewDocName('');
   };
@@ -161,6 +166,10 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
   };
 
   const handleFormSubmit = async (isDraft: boolean) => {
+    if (!vendor) {
+      setErrorMessage('An active, verified Vendor account is required to submit a solution & budgetary offer.');
+      return;
+    }
     if (!proposedSolution.trim() && !isDraft) {
       setErrorMessage('Please provide a detailed description of the Proposed Solution in Part A.');
       setActiveTab('partA');
@@ -203,11 +212,13 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
       await fetchApi('/api/proposals', {
         method: 'POST',
         body: JSON.stringify({
-          problemStatementId: problemStatement.id,
-          problemStatementCode: problemStatement.code,
-          problemStatementTitle: problemStatement.title,
-          vendorId: effectiveVendor.id,
-          vendorName: effectiveVendor.name,
+          problemStatementId: problemStatement?.id || budgetaryRequest?.linkedProblemStatementId || '',
+          problemStatementCode: problemStatement?.code || budgetaryRequest?.linkedProblemStatementCode || budgetaryRequest?.requestCode || '',
+          problemStatementTitle: problemStatement?.title || budgetaryRequest?.title || '',
+          budgetaryRequestId: budgetaryRequest?.id,
+          mineComplexCode: problemStatement?.mineComplexCode || budgetaryRequest?.mineComplexCode || 'HO',
+          vendorId: vendor.id,
+          vendorName: vendor.name,
           understandingOfRequirement,
           proposedSolution,
           technicalSpecifications,
@@ -247,16 +258,24 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-emerald-800 font-bold uppercase tracking-wider text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                VENDOR SOLUTION & BUDGETARY OFFER · SECTION 10
+                {budgetaryRequest ? 'BUDGETARY OFFER RESPONSE (BOR)' : 'VENDOR SOLUTION & BUDGETARY OFFER'}
               </span>
               <span className="text-slate-400">·</span>
-              <span className="text-slate-600 font-mono font-semibold">{problemStatement.code}</span>
+              <span className="text-slate-600 font-mono font-semibold">{targetCode}</span>
             </div>
             <h3 className="font-bold text-slate-900 text-base sm:text-lg mt-0.5">
-              Submit Solution & Budgetary Offer: {problemStatement.title}
+              Submit Solution & Budgetary Offer: {targetTitle}
             </h3>
             <p className="text-slate-500 text-xs">
-              Responding as registered vendor: <strong className="text-slate-800">{effectiveVendor.name}</strong> ({effectiveVendor.legalEntity})
+              {vendor ? (
+                <>
+                  Responding as registered vendor: <strong className="text-slate-800">{vendor.name}</strong> ({vendor.legalEntity})
+                </>
+              ) : (
+                <span className="text-rose-700 font-semibold">
+                  Sign in with an approved Vendor account to submit a binding offer.
+                </span>
+              )}
             </p>
           </div>
           <button
@@ -471,22 +490,33 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
               </div>
 
               {/* Technical Attachments */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="font-bold text-slate-800 block mb-1">Technical Supporting Documents</span>
-                <div className="flex items-center gap-2 mb-2">
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <span className="font-bold text-slate-800 block">Technical Supporting Documents (PDF, DOCX, XLSX, PNG, JPG)</span>
+                <label className="flex items-center justify-center gap-2 border border-dashed border-slate-300 hover:border-blue-500 bg-white rounded-xl p-3 cursor-pointer transition-colors">
+                  <Upload className="w-4 h-4 text-blue-700" />
+                  <span className="font-semibold text-slate-700">Select Proposal Architecture / BOM Files</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={newDocName}
                     onChange={(e) => setNewDocName(e.target.value)}
-                    placeholder="e.g. System_SLD_Architecture_Diagram.pdf"
-                    className="flex-1 border border-slate-300 rounded-xl p-2 text-slate-900 text-xs"
+                    placeholder="Or enter document reference filename (e.g. System_SLD_Architecture.pdf)"
+                    className="flex-1 border border-slate-300 rounded-xl p-2 bg-white text-slate-900 text-xs"
                   />
                   <button
                     type="button"
                     onClick={handleAddDoc}
-                    className="px-3 py-2 bg-slate-800 text-white font-semibold rounded-xl"
+                    className="px-3 py-2 bg-slate-800 text-white font-semibold rounded-xl whitespace-nowrap"
                   >
-                    Add File
+                    Add Reference
                   </button>
                 </div>
                 <div className="space-y-1.5">
@@ -820,10 +850,13 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
             <div className="space-y-4">
               <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-3">
                 <Lock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                <div className="text-amber-900 text-xs">
+                <div className="text-amber-900 text-xs space-y-1.5">
                   <strong className="block font-bold">Important Notice Regarding Final Submission</strong>
-                  <span>
-                    Per NMDC procurement governance guidelines, upon clicking <strong>"Submit & Lock Offer"</strong>, this budgetary offer and technical proposal will be permanently locked. Any subsequent changes will require an authorized revision process with timestamped version history.
+                  <span className="block">
+                    Per NMDC procurement governance guidelines, upon clicking <strong>"Submit & Lock Offer"</strong>, this budgetary offer and technical proposal will be permanently locked.
+                  </span>
+                  <span className="block text-[11px] font-medium text-amber-800 pt-1 border-t border-amber-200/80">
+                    {BUDGETARY_DISCLAIMER_TEXT}
                   </span>
                 </div>
               </div>
@@ -835,12 +868,12 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
                     Proposal Identification
                   </span>
                   <div>
-                    <span className="text-slate-500">Problem Statement:</span>
-                    <strong className="block text-slate-800">{problemStatement.code} - {problemStatement.title}</strong>
+                    <span className="text-slate-500">Reference Requirement:</span>
+                    <strong className="block text-slate-800">{targetCode} - {targetTitle}</strong>
                   </div>
                   <div>
                     <span className="text-slate-500">Responding Vendor:</span>
-                    <strong className="block text-slate-800">{effectiveVendor.name}</strong>
+                    <strong className="block text-slate-800">{vendor?.name || 'Not Signed In as Vendor'}</strong>
                   </div>
                   <div>
                     <span className="text-slate-500">Delivery Period:</span>
@@ -857,7 +890,7 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
                     <span className="font-mono font-semibold">₹ {(subtotalCost / 10000000).toFixed(2)} Cr</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">GST (18%):</span>
+                    <span className="text-slate-500">GST ({gstRate}%):</span>
                     <span className="font-mono font-semibold">₹ {(gstAmount / 10000000).toFixed(2)} Cr</span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-slate-200 font-bold text-blue-900">
@@ -865,7 +898,7 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
                     <span className="font-mono text-sm">₹ {(totalEstimatedCost / 10000000).toFixed(2)} Cr</span>
                   </div>
                   <div className="text-[11px] text-slate-500 pt-1">
-                    Indicative Budget: {problemStatement.indicativeBudget}
+                    Indicative Budget: {targetBudgetLabel}
                   </div>
                 </div>
               </div>
@@ -895,9 +928,9 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
           <div className="flex items-center gap-2.5">
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || !vendor}
               onClick={() => handleFormSubmit(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 font-semibold rounded-xl transition-colors"
             >
               <Save className="w-4 h-4 text-slate-500" />
               <span>Save Draft</span>
@@ -919,9 +952,9 @@ export const ProposalWizardModal: React.FC<ProposalWizardModalProps> = ({
             ) : (
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || !vendor}
                 onClick={() => handleFormSubmit(false)}
-                className="flex items-center gap-1.5 px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl shadow-xs transition-colors"
+                className="flex items-center gap-1.5 px-5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors"
               >
                 <Lock className="w-4 h-4 text-emerald-200" />
                 <span>{submitting ? 'Locking & Submitting...' : 'Submit & Lock Offer'}</span>

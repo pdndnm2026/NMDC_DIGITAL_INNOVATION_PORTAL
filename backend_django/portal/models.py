@@ -6,25 +6,41 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator, MaxValueValidator
 import uuid
 
-# 0. Dedicated Mine / Operating Complex Model (Section 4 & 13)
+
+# 0. Dedicated Organisational Units Model (5 Units: HO + DIOM, KIOM, BCH, KDL)
 class MineComplex(models.Model):
-    complex_code = models.CharField(max_length=10, primary_key=True, unique=True, help_text="DIOM, KIOM, BCH, KDL")
+    complex_code = models.CharField(
+        max_length=10,
+        primary_key=True,
+        unique=True,
+        help_text="HO, DIOM, KIOM, BCH, KDL",
+    )
     name = models.CharField(max_length=150)
+    short_label = models.CharField(max_length=80, blank=True)
+    unit_type = models.CharField(
+        max_length=30,
+        choices=[('CORPORATE', 'Corporate / Head Office'), ('MINING_COMPLEX', 'Mining Complex')],
+        default='MINING_COMPLEX',
+    )
+    prefix = models.CharField(max_length=20, blank=True)
+    bor_prefix = models.CharField(max_length=20, blank=True)
     location = models.CharField(max_length=150)
     state = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    is_corporate_access = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'nmdc_mine_complexes'
-        verbose_name = 'Mine / Complex'
-        verbose_name_plural = 'Mine / Operating Complexes'
+        verbose_name = 'Organisational Unit / Mine Complex'
+        verbose_name_plural = 'Organisational Units / Mine Complexes'
 
     def __str__(self):
         return f"{self.complex_code} - {self.name}"
 
-# 1. Ten User Roles (Section 3)
+
+# 1. Ten User Roles
 class UserRole(models.TextChoices):
     PUBLIC = 'public', 'Public Visitor'
     EXECUTIVE = 'executive', 'NMDC Executive / Employee'
@@ -37,41 +53,94 @@ class UserRole(models.TextChoices):
     PROJECT_MANAGER = 'project_manager', 'Project Manager'
     ADMIN = 'admin', 'Portal Administrator'
 
+
 class PortalUserStatus(models.TextChoices):
     PENDING = 'Pending', 'Pending Admin Verification'
     ACTIVE = 'Active', 'Active & Verified'
+    REJECTED = 'Rejected', 'Rejected'
     SUSPENDED = 'Suspended', 'Suspended'
+
 
 class PortalUser(AbstractUser):
     role = models.CharField(max_length=30, choices=UserRole.choices, default=UserRole.PUBLIC)
     status = models.CharField(max_length=20, choices=PortalUserStatus.choices, default=PortalUserStatus.PENDING)
-    employee_id = models.CharField(max_length=50, blank=True, null=True, unique=True)
+    employee_id = models.CharField(max_length=50, blank=True, null=True, unique=True, verbose_name="SAP Employee ID")
     department = models.CharField(max_length=150, blank=True, null=True)
     designation = models.CharField(max_length=150, blank=True, null=True)
-    
-    # ForeignKey to Dedicated Mine/Complex
+    area_of_work = models.CharField(max_length=150, blank=True, null=True)
+    location = models.CharField(max_length=150, blank=True, null=True)
     mine_complex = models.ForeignKey(MineComplex, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_users')
     project_complex = models.CharField(max_length=150, blank=True, null=True)
     mobile = models.CharField(max_length=20, blank=True, null=True)
     vendor_ref = models.ForeignKey('Vendor', on_delete=models.SET_NULL, null=True, blank=True, related_name='representatives')
+    approval_remarks = models.TextField(blank=True, null=True)
 
     class Meta:
         db_table = 'nmdc_portal_users'
         verbose_name = 'Portal User'
         verbose_name_plural = 'Portal Users'
 
-# 2. Vendor Registration & Verification (Section 8)
+
+# 1B. Employee Master Data Management (SAP Reference Master — Never Auto-Creates Accounts)
+class EmployeeMaster(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    employee_name = models.CharField(max_length=200)
+    sap_employee_id = models.CharField(max_length=50, unique=True)
+    official_email = models.EmailField(unique=True)
+    mobile_number = models.CharField(max_length=20)
+    designation = models.CharField(max_length=150)
+    department = models.CharField(max_length=150)
+    area_of_work = models.CharField(max_length=150)
+    mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='employees')
+    location = models.CharField(max_length=150)
+    employee_status = models.CharField(
+        max_length=20,
+        choices=[('Active', 'Active'), ('Inactive', 'Inactive')],
+        default='Active',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'nmdc_employee_master'
+        verbose_name = 'Employee Master Record'
+        verbose_name_plural = 'Employee Master Records'
+
+    def __str__(self):
+        return f"{self.sap_employee_id} - {self.employee_name}"
+
+
+class EmployeeImportHistory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    filename = models.CharField(max_length=255)
+    uploaded_by = models.CharField(max_length=150)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    total_rows = models.PositiveIntegerField(default=0)
+    imported_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    duplicate_count = models.PositiveIntegerField(default=0)
+    rejected_count = models.PositiveIntegerField(default=0)
+    validation_errors = models.JSONField(default=list)
+
+    class Meta:
+        db_table = 'nmdc_employee_import_history'
+        ordering = ['-uploaded_at']
+
+
+# 2. Vendor Registration & Verification
 class VendorStatus(models.TextChoices):
     PENDING = 'Pending', 'Pending Admin Verification'
     UNDER_VERIFICATION = 'Under Verification', 'Under Verification'
     APPROVED = 'Approved', 'Approved'
     ACTIVE = 'Active', 'Active'
+    REJECTED = 'Rejected', 'Rejected'
     SUSPENDED = 'Suspended', 'Suspended'
+
 
 class Vendor(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, verbose_name="Company Name")
-    registration_number = models.CharField(max_length=50, blank=True, verbose_name="Registration Number")
+    registration_number = models.CharField(max_length=50, verbose_name="Registration Number")
     legal_constitution = models.CharField(max_length=50, choices=[
         ('Private Limited', 'Private Limited'),
         ('Public Limited', 'Public Limited'),
@@ -81,14 +150,24 @@ class Vendor(models.Model):
     ], default='Private Limited')
     cin = models.CharField(max_length=30, unique=True, verbose_name="CIN", blank=True, null=True)
     pan = models.CharField(max_length=15, unique=True, verbose_name="PAN")
-    gstin = models.CharField(max_length=20, unique=True, verbose_name="GSTIN")
+    gst_exempt = models.BooleanField(default=False)
+    gst_exemption_reason = models.CharField(max_length=255, blank=True, null=True)
+    gstin = models.CharField(max_length=20, unique=True, blank=True, null=True, verbose_name="GSTIN")
     registered_address = models.TextField()
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    pin_code = models.CharField(max_length=10, blank=True)
+    country = models.CharField(max_length=80, default='India')
     website = models.URLField(blank=True, null=True)
     year_established = models.PositiveIntegerField(default=2015)
     contact_person = models.CharField(max_length=150)
     designation = models.CharField(max_length=150)
     email = models.EmailField(unique=True)
     mobile = models.CharField(max_length=20)
+    alternate_mobile = models.CharField(max_length=20, blank=True, null=True)
+    nature_of_business = models.CharField(max_length=150, blank=True)
+    business_category = models.CharField(max_length=150, blank=True)
+    company_profile = models.TextField(blank=True)
     msme_status = models.BooleanField(default=False, verbose_name="MSME Registered")
     startup_status = models.BooleanField(default=False, verbose_name="DPIIT Startup")
     areas_of_expertise = models.JSONField(default=list)
@@ -96,12 +175,16 @@ class Vendor(models.Model):
     mining_psu_experience = models.TextField(blank=True)
     annual_turnover_cr = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     net_worth_cr = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    declaration_accepted = models.BooleanField(default=False)
     status = models.CharField(max_length=30, choices=VendorStatus.choices, default=VendorStatus.PENDING)
+    rejection_reason = models.TextField(blank=True, null=True)
     performance_score = models.PositiveIntegerField(default=85, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    is_demo = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'nmdc_vendors'
+
 
 class VendorDocument(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='documents')
@@ -116,6 +199,8 @@ class VendorDocument(models.Model):
         ('Financial', 'Audited Balance Sheet'),
     ])
     file = models.FileField(upload_to='vendor_documents/')
+    file_size_bytes = models.PositiveBigIntegerField(default=0)
+    mime_type = models.CharField(max_length=100, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
     verified_by = models.ForeignKey(PortalUser, on_delete=models.SET_NULL, null=True, blank=True)
@@ -123,7 +208,8 @@ class VendorDocument(models.Model):
     class Meta:
         db_table = 'nmdc_vendor_documents'
 
-# 3. Problem Statement & Approvals (Sections 6 & 7)
+
+# 3. Problem Statement & Attachments (Including Video Upload)
 class ProblemStatementStatus(models.TextChoices):
     DRAFT = 'Draft', 'Draft'
     SUBMITTED = 'Submitted', 'Submitted'
@@ -136,6 +222,7 @@ class ProblemStatementStatus(models.TextChoices):
     POC_UNDERWAY = 'PoC Underway', 'PoC Underway'
     AWARD_SANCTIONED = 'Award Sanctioned', 'Award Sanctioned'
     CLOSED = 'Closed', 'Closed'
+
 
 class ProblemStatement(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -150,8 +237,7 @@ class ProblemStatement(models.Model):
     submission_date = models.DateField(auto_now_add=True)
     category = models.CharField(max_length=150)
     sub_category = models.CharField(max_length=150, blank=True)
-    
-    # Problem details
+
     existing_situation = models.TextField()
     detailed_problem_statement = models.TextField()
     operational_difficulties = models.TextField()
@@ -161,7 +247,6 @@ class ProblemStatement(models.Model):
     expected_benefits = models.TextField()
     supporting_technical_info = models.TextField(blank=True)
 
-    # Requirement details
     required_solution = models.TextField()
     technical_specifications = models.TextField()
     scope_of_supply = models.TextField()
@@ -174,11 +259,29 @@ class ProblemStatement(models.Model):
 
     status = models.CharField(max_length=30, choices=ProblemStatementStatus.choices, default=ProblemStatementStatus.DRAFT)
     published_date = models.DateField(null=True, blank=True)
+    is_demo = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'nmdc_problem_statements'
+
+
+class ProblemStatementAttachment(models.Model):
+    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.CASCADE, related_name='attachments')
+    file_name = models.CharField(max_length=255)
+    media_kind = models.CharField(
+        max_length=20,
+        choices=[('document', 'Document'), ('image', 'Image'), ('video', 'Video (MP4/WEBM/MOV)')],
+        default='document',
+    )
+    file = models.FileField(upload_to='problem_statement_media/')
+    file_size_bytes = models.PositiveBigIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'nmdc_problem_statement_attachments'
+
 
 class ProblemStatementApproval(models.Model):
     problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.CASCADE, related_name='approval_history')
@@ -191,27 +294,89 @@ class ProblemStatementApproval(models.Model):
     class Meta:
         db_table = 'nmdc_problem_statement_approvals'
 
-# 4. Clarification Management (Section 11)
-class ClarificationQuery(models.Model):
-    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.CASCADE, related_name='clarifications')
-    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE)
-    query_subject = models.CharField(max_length=255)
-    query_text = models.TextField()
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=40, choices=[
-        ('Pending Response', 'Pending Response'),
-        ('Response Prepared', 'Response Prepared'),
-        ('Published to All Vendors', 'Published to All Vendors'),
-    ], default='Pending Response')
-    response_text = models.TextField(blank=True, null=True)
-    answered_by = models.ForeignKey(PortalUser, on_delete=models.SET_NULL, null=True, blank=True)
-    answered_at = models.DateTimeField(null=True, blank=True)
-    is_common_to_all = models.BooleanField(default=True)
+
+# 3B. Budgetary Offer Request Module (Standalone or Linked to Problem Statement)
+class BudgetaryOfferRequest(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bor_code = models.CharField(max_length=50, unique=True, help_text="e.g. DIOM-BOR-2026-0001")
+    mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='budgetary_requests')
+    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.SET_NULL, null=True, blank=True, related_name='budgetary_requests')
+    title = models.CharField(max_length=300)
+    department = models.CharField(max_length=150)
+    scope_summary = models.TextField()
+    technical_parameters = models.TextField()
+    estimated_budget_range = models.CharField(max_length=150)
+    issue_date = models.DateField(auto_now_add=True)
+    submission_deadline = models.DateField()
+    visibility_mode = models.CharField(
+        max_length=20,
+        choices=[('ALL_ELIGIBLE', 'All Eligible Vendors'), ('INVITED_ONLY', 'Invited Vendors Only')],
+        default='ALL_ELIGIBLE',
+    )
+    invited_vendors = models.ManyToManyField(Vendor, blank=True, related_name='invited_bors')
+    status = models.CharField(
+        max_length=30,
+        choices=[('Open', 'Open'), ('Extended', 'Deadline Extended'), ('Closed', 'Closed'), ('Cancelled', 'Cancelled')],
+        default='Open',
+    )
+    deadline_history = models.JSONField(default=list)
+    closure_reason = models.TextField(blank=True, null=True)
+    disclaimer_text = models.TextField()
+    created_by = models.ForeignKey(PortalUser, on_delete=models.PROTECT, related_name='created_bors')
+    is_demo = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'nmdc_clarification_queries'
+        db_table = 'nmdc_budgetary_offer_requests'
 
-# 5. Vendor Proposal & Budgetary Offer (Section 10)
+
+# 4. Clarification Management & Real-Time Discussions
+class DiscussionThread(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity_type = models.CharField(
+        max_length=30,
+        choices=[('PROBLEM', 'Problem Statement'), ('BUDGETARY_REQUEST', 'Budgetary Offer Request')],
+    )
+    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.CASCADE, null=True, blank=True, related_name='discussion_threads')
+    budgetary_request = models.ForeignKey(BudgetaryOfferRequest, on_delete=models.CASCADE, null=True, blank=True, related_name='discussion_threads')
+    mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='discussion_threads')
+    subject = models.CharField(max_length=255)
+    visibility = models.CharField(
+        max_length=30,
+        choices=[('PRIVATE_VENDOR', 'Private Vendor Thread'), ('PUBLIC_COMMON', 'Common Official Clarification')],
+        default='PRIVATE_VENDOR',
+    )
+    target_vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, null=True, blank=True, related_name='discussion_threads')
+    is_closed = models.BooleanField(default=False)
+    closed_by = models.ForeignKey(PortalUser, on_delete=models.SET_NULL, null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    unread_for_nmdc = models.PositiveIntegerField(default=0)
+    unread_for_vendor = models.PositiveIntegerField(default=0)
+    is_demo = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'nmdc_discussion_threads'
+
+
+class DiscussionMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    thread = models.ForeignKey(DiscussionThread, on_delete=models.CASCADE, related_name='messages')
+    sender_user = models.ForeignKey(PortalUser, on_delete=models.SET_NULL, null=True, blank=True)
+    sender_name = models.CharField(max_length=150)
+    sender_role = models.CharField(max_length=40)
+    sender_vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True)
+    body = models.TextField()
+    attachments = models.JSONField(default=list)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'nmdc_discussion_messages'
+        ordering = ['sent_at']
+
+
+# 5. Vendor Proposal & Budgetary Offer
 class ProposalStatus(models.TextChoices):
     DRAFT = 'Draft', 'Draft'
     SUBMITTED = 'Submitted', 'Submitted'
@@ -225,10 +390,12 @@ class ProposalStatus(models.TextChoices):
     AWARDED = 'Awarded', 'Awarded'
     REJECTED = 'Rejected', 'Rejected'
 
+
 class VendorProposal(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     proposal_code = models.CharField(max_length=50, unique=True, help_text="e.g. DIOM-PROP-2026-0001")
-    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.PROTECT, related_name='proposals')
+    problem_statement = models.ForeignKey(ProblemStatement, on_delete=models.PROTECT, null=True, blank=True, related_name='proposals')
+    budgetary_request = models.ForeignKey(BudgetaryOfferRequest, on_delete=models.PROTECT, null=True, blank=True, related_name='proposals')
     mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='proposals')
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='proposals')
     submitted_at = models.DateTimeField(auto_now_add=True)
@@ -236,7 +403,6 @@ class VendorProposal(models.Model):
     is_locked = models.BooleanField(default=True)
     revision_number = models.PositiveIntegerField(default=1)
 
-    # Part A: Technical Proposal
     understanding_of_requirement = models.TextField()
     proposed_solution = models.TextField()
     technical_specifications = models.TextField()
@@ -253,7 +419,6 @@ class VendorProposal(models.Model):
     training_scope = models.TextField()
     technical_deviations = models.TextField(blank=True)
 
-    # Part B: Itemized Commercial Proposal
     equipment_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.0)
     hardware_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.0)
     software_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.0)
@@ -270,25 +435,25 @@ class VendorProposal(models.Model):
     gst_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0.0)
     total_estimated_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0.0)
 
-    # Part C: Commercial Conditions
     offer_validity_days = models.PositiveIntegerField(default=90)
     payment_terms = models.TextField()
     amc_years = models.PositiveIntegerField(default=3)
     price_basis = models.CharField(max_length=255, default='FOR Destination')
     taxes_and_duties = models.TextField(default='GST extra at prevailing statutory rates')
 
-    # Evaluation results
     technical_compliance_status = models.CharField(max_length=40, blank=True, null=True)
     technical_marks = models.PositiveIntegerField(blank=True, null=True)
     technical_remarks = models.TextField(blank=True, null=True)
     evaluated_by = models.ForeignKey(PortalUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='evaluated_proposals')
     commercial_rank = models.CharField(max_length=10, blank=True, null=True)
     committee_recommendation = models.CharField(max_length=100, blank=True, null=True)
+    is_demo = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'nmdc_vendor_proposals'
 
-# 6. Technical Evaluation (Section 12)
+
+# 6. Technical Evaluation
 class TechnicalEvaluationParameter(models.Model):
     name = models.CharField(max_length=200)
     category = models.CharField(max_length=50, default='Technical')
@@ -298,6 +463,7 @@ class TechnicalEvaluationParameter(models.Model):
 
     class Meta:
         db_table = 'nmdc_evaluation_parameters'
+
 
 class ParameterScore(models.Model):
     proposal = models.ForeignKey(VendorProposal, on_delete=models.CASCADE, related_name='scores')
@@ -314,7 +480,8 @@ class ParameterScore(models.Model):
     class Meta:
         db_table = 'nmdc_parameter_scores'
 
-# 7. Proof of Concept (PoC) Management (Section 14)
+
+# 7. Proof of Concept (PoC) Management
 class PocRecord(models.Model):
     poc_code = models.CharField(max_length=50, unique=True, help_text="e.g. DIOM-POC-2026-0001")
     mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='pocs')
@@ -335,11 +502,13 @@ class PocRecord(models.Model):
     status = models.CharField(max_length=40, default='Proposed')
     progress_pct = models.PositiveIntegerField(default=0)
     is_closed = models.BooleanField(default=False)
+    is_demo = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'nmdc_poc_records'
 
-# 8. Award of Work & Contract (Section 16)
+
+# 8. Award of Work & Contract
 class AwardOfWork(models.Model):
     award_code = models.CharField(max_length=50, unique=True, help_text="e.g. DIOM-AOW-2026-0001")
     mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='awards')
@@ -361,8 +530,7 @@ class AwardOfWork(models.Model):
     delivery_period_weeks = models.PositiveIntegerField()
     completion_period_months = models.PositiveIntegerField()
     warranty_period_months = models.PositiveIntegerField()
-    
-    # PBG
+
     pbg_number = models.CharField(max_length=100)
     pbg_issuing_bank = models.CharField(max_length=150)
     pbg_amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -372,11 +540,13 @@ class AwardOfWork(models.Model):
     scope_of_work_summary = models.TextField()
     responsible_officer = models.ForeignKey(PortalUser, on_delete=models.PROTECT)
     status = models.CharField(max_length=40, default='Sanctioned')
+    is_demo = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'nmdc_awards_of_work'
 
-# 9. 12-Stage Project Execution Tracking (Sections 17 & 18)
+
+# 9. 12-Stage Project Execution Tracking
 class Project(models.Model):
     project_code = models.CharField(max_length=50, unique=True, help_text="e.g. DIOM-PRJ-2026-0001")
     mine_complex = models.ForeignKey(MineComplex, on_delete=models.PROTECT, related_name='projects')
@@ -398,9 +568,11 @@ class Project(models.Model):
     warranty_expiry_date = models.DateField(null=True, blank=True)
     amc_active = models.BooleanField(default=True)
     performance_score = models.PositiveIntegerField(default=90)
+    is_demo = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'nmdc_projects'
+
 
 class ProjectMilestone(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='milestones')
@@ -419,7 +591,8 @@ class ProjectMilestone(models.Model):
     class Meta:
         db_table = 'nmdc_project_milestones'
 
-# 10. Immutable Audit Trail (Section 23)
+
+# 10. Immutable Audit Trail
 class AuditLog(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     timestamp = models.DateTimeField(auto_now_add=True)

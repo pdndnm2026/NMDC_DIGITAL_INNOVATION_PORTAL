@@ -6,27 +6,26 @@ import {
   ProblemStatement, 
   Proposal,
   MineComplexCode,
-  AUTHORIZED_MINE_COMPLEXES 
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS 
 } from '../types/index.js';
 import { 
   Award, 
   Search, 
-  Filter, 
   FileText, 
-  Calendar, 
-  ShieldCheck, 
   Building2, 
-  CheckCircle2, 
   PlusCircle, 
   ChevronRight,
-  Clock,
   Printer,
-  MapPin
+  MapPin,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface AwardsViewProps {
   awards: AwardOfWork[];
+  organisationalUnits?: MineComplex[];
   currentRole: UserRole;
   currentUser: User | null;
   activeComplexCode?: MineComplexCode | 'ALL';
@@ -38,11 +37,11 @@ interface AwardsViewProps {
 
 export const AwardsView: React.FC<AwardsViewProps> = ({
   awards,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
   currentRole,
   currentUser,
   activeComplexCode = 'ALL',
   problemStatements,
-  proposals,
   onRefreshData,
   onNavigateToProjects,
 }) => {
@@ -50,6 +49,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
   const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
   const [selectedAward, setSelectedAward] = useState<AwardOfWork | null>(null);
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Form state for creating new award of work - clean zero-mock defaults
   const [newAwardForm, setNewAwardForm] = useState({
@@ -98,7 +98,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
     try {
       const selectedPs = problemStatements.find((p) => p.id === newAwardForm.problemStatementId);
       const chosenComplexCode = selectedPs?.mineComplexCode || newAwardForm.mineComplexCode;
-      const complexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === chosenComplexCode);
+      const complexObj = organisationalUnits.find(c => c.code === chosenComplexCode);
 
       await fetchApi('/api/awards', {
         method: 'POST',
@@ -138,9 +138,10 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
       });
 
       setIsIssueModalOpen(false);
+      setErrorBanner(null);
       onRefreshData();
     } catch (err: any) {
-      alert(`Error creating award: ${err.message}`);
+      setErrorBanner(`Error creating award: ${err.message}`);
     }
   };
 
@@ -152,7 +153,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
     return `₹ ${(val / 10000000).toFixed(2)} Cr`;
   };
 
-  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
+  const activeComplexObj = organisationalUnits.find(c => c.code === selectedComplexFilter);
 
   return (
     <div className="space-y-6 pb-16">
@@ -188,7 +189,19 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
         </div>
       </div>
 
-      {/* Complex Filter Pills */}
+      {errorBanner && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorBanner}</span>
+          </div>
+          <button onClick={() => setErrorBanner(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Organisational Unit Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           onClick={() => setSelectedComplexFilter('ALL')}
@@ -199,10 +212,10 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>All 4 Complexes</span>
+          <span>All 5 Units</span>
         </button>
 
-        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+        {organisationalUnits.filter(c => c.activeStatus).map((complex) => {
           const isActive = selectedComplexFilter === complex.code;
           return (
             <button
@@ -215,7 +228,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
-              <span>{complex.name}</span>
+              <span>{complex.shortLabel || complex.name}</span>
             </button>
           );
         })}
@@ -304,6 +317,11 @@ export const AwardsView: React.FC<AwardsViewProps> = ({
                     <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       {award.awardCode}
                     </span>
+                    {award.isDemo && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold">
+                        DEMO
+                      </span>
+                    )}
                     <span className="text-[10px] font-semibold text-slate-500">
                       PS: {award.problemStatementCode}
                     </span>

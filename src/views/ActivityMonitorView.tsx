@@ -122,7 +122,7 @@ export const ActivityMonitorView: React.FC<ActivityMonitorViewProps> = ({
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs">
-            <span className={`w-2.5 h-2.5 rounded-full ${liveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+            <span className={`w-2.5 h-2.5 rounded-full ${liveConnected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
             <span className="font-semibold text-slate-700">{liveConnected ? 'SSE Live Stream Active' : 'Disconnected'}</span>
           </div>
 

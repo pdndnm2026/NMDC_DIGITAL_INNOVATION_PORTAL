@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { Proposal, ProblemStatement, UserRole, User, EvaluationParameter, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
+import {
+  Proposal,
+  ProblemStatement,
+  UserRole,
+  User,
+  EvaluationParameter,
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS
+} from '../types/index.js';
 import { 
   FileText, 
   Search, 
   Filter, 
-  Award, 
-  CheckCircle2, 
-  Clock, 
-  IndianRupee, 
   ShieldCheck, 
-  Eye, 
   Lock, 
-  Download, 
-  Printer, 
   ChevronRight,
-  Building,
-  Check,
   X,
   MapPin,
   Building2
@@ -24,6 +24,8 @@ import {
 interface ProposalsViewProps {
   proposals: Proposal[];
   problemStatements: ProblemStatement[];
+  organisationalUnits?: MineComplex[];
+  mode?: 'responses' | 'evaluation';
   currentRole: UserRole;
   currentUser: User | null;
   activeComplexCode?: MineComplexCode | 'ALL';
@@ -36,13 +38,13 @@ interface ProposalsViewProps {
 export const ProposalsView: React.FC<ProposalsViewProps> = ({
   proposals,
   problemStatements,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
+  mode = 'responses',
   currentRole,
   currentUser,
   activeComplexCode = 'ALL',
-  parameters = [],
   onOpenEvaluate,
   onOpenCompare,
-  onRefreshData,
 }) => {
   const [selectedPsFilter, setSelectedPsFilter] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -87,7 +89,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
     return true;
   });
 
-  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
+  const activeComplexObj = organisationalUnits.find(c => c.code === selectedComplexFilter);
 
   return (
     <div className="space-y-6 pb-16">
@@ -103,11 +105,15 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
               {selectedComplexFilter === 'ALL' ? 'All Complexes' : activeComplexObj?.name}: {filtered.length} Submissions
             </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
-            Vendor Solutions, Budgetary Offers & Evaluation
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
+            {mode === 'evaluation'
+              ? 'Technical & Commercial Proposal Evaluation Workbench'
+              : 'Vendor Responses & Budgetary Offer Register'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Technical proposal scrutiny, itemized cost comparisons, compliance recording and PoC recommendations.
+            {mode === 'evaluation'
+              ? 'Committee scoring across technical parameters, itemized L1 comparative matrix, and PoC shortlisting.'
+              : 'Technical proposal scrutiny, itemized cost comparisons, compliance recording and PoC recommendations.'}
           </p>
         </div>
 
@@ -126,7 +132,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
         )}
       </div>
 
-      {/* Complex Filter Pills */}
+      {/* Organisational Unit Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           onClick={() => setSelectedComplexFilter('ALL')}
@@ -137,10 +143,10 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>All 4 Complexes</span>
+          <span>All 5 Units</span>
         </button>
 
-        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+        {organisationalUnits.filter(c => c.activeStatus).map((complex) => {
           const isActive = selectedComplexFilter === complex.code;
           const count = proposals.filter(p => p.mineComplexCode === complex.code).length;
           return (
@@ -154,8 +160,8 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
-              <span>{complex.name}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              <span>{complex.shortLabel || complex.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${isActive ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
                 {count}
               </span>
             </button>
@@ -238,11 +244,18 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
                 className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between p-5 space-y-4"
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                      {prop.isLocked && <Lock className="w-3 h-3 text-emerald-700" />}
-                      <span>{prop.proposalCode}</span>
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                        {prop.isLocked && <Lock className="w-3 h-3 text-emerald-700" />}
+                        <span>{prop.proposalCode}</span>
+                      </span>
+                      {prop.isDemo && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold">
+                          DEMO
+                        </span>
+                      )}
+                    </div>
 
                     <span
                       className={`text-[11px] font-bold px-2 py-0.5 rounded border ${

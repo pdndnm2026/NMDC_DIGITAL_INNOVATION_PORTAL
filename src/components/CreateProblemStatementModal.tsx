@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Save, AlertCircle, Trash2 } from 'lucide-react';
+import { X, Send, Save, AlertCircle, Trash2, Upload, Video, Image as ImageIcon, FileText } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
-import { User, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
+import {
+  User,
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS,
+  AttachmentFile,
+} from '../types/index.js';
 
 interface CreateProblemStatementModalProps {
   isOpen: boolean;
@@ -9,6 +15,7 @@ interface CreateProblemStatementModalProps {
   onSuccess: () => void;
   currentUser?: User | null;
   defaultComplexCode?: MineComplexCode | 'ALL';
+  organisationalUnits?: MineComplex[];
 }
 
 export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalProps> = ({
@@ -17,6 +24,7 @@ export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalPr
   onSuccess,
   currentUser,
   defaultComplexCode,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
 }) => {
   const [activeStep, setActiveStep] = useState<'basic' | 'problem' | 'requirement' | 'attachments'>('basic');
   
@@ -59,8 +67,8 @@ export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalPr
     new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10)
   );
 
-  // Attachments
-  const [attachments, setAttachments] = useState<{ name: string; size: string; type: string }[]>([]);
+  // Attachments (Documents, Images & Videos)
+  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [newAttachmentName, setNewAttachmentName] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
@@ -85,14 +93,53 @@ export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalPr
 
   if (!isOpen) return null;
 
-  const currentComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexCode);
+  const currentComplexObj = organisationalUnits.find(c => c.code === selectedComplexCode);
+
+  const detectMediaKind = (ext: string): 'document' | 'image' | 'video' => {
+    const clean = ext.toUpperCase();
+    if (['MP4', 'WEBM', 'MOV'].includes(clean)) return 'video';
+    if (['PNG', 'JPG', 'JPEG', 'WEBP'].includes(clean)) return 'image';
+    return 'document';
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setErrorMessage(null);
+
+    const added: AttachmentFile[] = [];
+    for (const file of files) {
+      const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+      const mediaKind = detectMediaKind(ext);
+      const maxBytes = mediaKind === 'video' ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        setErrorMessage(`File "${file.name}" exceeds maximum allowed size (${mediaKind === 'video' ? '50 MB for video' : '10 MB for documents'}).`);
+        continue;
+      }
+      const sizeStr = file.size >= 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+        : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+      added.push({
+        name: file.name,
+        size: sizeStr,
+        type: ext,
+        mediaKind,
+        url: URL.createObjectURL(file),
+      });
+    }
+    if (added.length > 0) {
+      setAttachments(prev => [...prev, ...added]);
+    }
+    e.target.value = '';
+  };
 
   const handleAddAttachment = () => {
     if (!newAttachmentName.trim()) return;
     const ext = newAttachmentName.split('.').pop()?.toUpperCase() || 'FILE';
+    const mediaKind = detectMediaKind(ext);
     setAttachments([
       ...attachments,
-      { name: newAttachmentName.trim(), size: '1.2 MB', type: ext },
+      { name: newAttachmentName.trim(), size: 'Reference File', type: ext, mediaKind },
     ]);
     setNewAttachmentName('');
   };
@@ -248,33 +295,33 @@ export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalPr
         <div className="flex-1 overflow-y-auto py-4 pr-1 space-y-4">
           {activeStep === 'basic' && (
             <div className="space-y-4">
-              {/* Mine / Complex Selection */}
+              {/* Organisational Unit Selection (All 5 DB Units) */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <label className="font-bold text-slate-800 block text-xs">
-                  Assigned Mine / Operating Complex Module *
+                  Assigned Organisational Unit / Mine Complex *
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {organisationalUnits.filter(u => u.activeStatus).map((complex) => {
                     const isSelected = selectedComplexCode === complex.code;
                     return (
                       <button
                         key={complex.code}
                         type="button"
                         onClick={() => setSelectedComplexCode(complex.code)}
-                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
                           isSelected
                             ? 'bg-blue-50 border-blue-600 text-blue-900 font-bold ring-1 ring-blue-600'
                             : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
                         }`}
                       >
-                        <div>
-                          <div className="font-semibold text-xs">{complex.name}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">{complex.code} · {complex.state}</div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-xs truncate">{complex.name}</div>
+                          <div className="text-[11px] text-slate-500 font-mono truncate">{complex.code} · {complex.state}</div>
                         </div>
-                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded shrink-0 ${
                           isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                         }`}>
-                          {complex.code}-PS-2026-XXXX
+                          {complex.code}
                         </span>
                       </button>
                     );
@@ -572,61 +619,99 @@ export const CreateProblemStatementModal: React.FC<CreateProblemStatementModalPr
 
           {activeStep === 'attachments' && (
             <div className="space-y-4">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <label className="font-bold text-slate-800 block mb-1">
-                  Upload Supporting Technical Documents
-                </label>
-                <p className="text-slate-500 text-[11px] mb-3">
-                  Upload PDF, DOCX, XLSX, PPTX, or CAD/image files (Drawings, P&IDs, SLDs, equipment nameplate photos).
-                </p>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div>
+                  <label className="font-bold text-slate-800 block mb-1">
+                    Upload Technical Documents, Drawings & Site Videos
+                  </label>
+                  <p className="text-slate-500 text-[11px]">
+                    Supports technical files (PDF, DOCX, XLSX, PNG, JPG up to 10 MB) and operational site walkthrough videos (MP4, WEBM, MOV up to 50 MB).
+                  </p>
+                </div>
 
-                <div className="flex items-center gap-2">
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white rounded-xl p-5 cursor-pointer transition-colors">
+                  <Upload className="w-6 h-6 text-blue-700 mb-1.5" />
+                  <span className="font-bold text-slate-800 text-xs">Click to select Documents, Images, or Video Files (MP4 / WEBM / MOV)</span>
+                  <span className="text-[11px] text-slate-400 mt-0.5">Multiple files supported</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.mp4,.webm,.mov"
+                    onChange={handleFileInputChange}
+                    className="hidden"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2 pt-1">
                   <input
                     type="text"
                     value={newAttachmentName}
                     onChange={(e) => setNewAttachmentName(e.target.value)}
-                    placeholder="e.g. Crusher_Hopper_Sectional_GA_Drawing.pdf"
-                    className="flex-1 border border-slate-300 rounded-xl p-2 text-slate-900 text-xs"
+                    placeholder="Or enter drawing/video reference filename (e.g. Crusher_Site_Walkthrough.mp4)"
+                    className="flex-1 border border-slate-300 rounded-xl p-2 bg-white text-slate-900 text-xs"
                   />
                   <button
                     type="button"
                     onClick={handleAddAttachment}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl"
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl whitespace-nowrap"
                   >
-                    Add Document
+                    Add Reference
                   </button>
                 </div>
               </div>
 
-              {/* Uploaded Documents List */}
+              {/* Uploaded Documents & Videos List */}
               <div className="space-y-2">
                 <span className="font-semibold text-slate-700 block text-xs">
-                  Attached Technical Files ({attachments.length}):
+                  Attached Technical Files & Videos ({attachments.length}):
                 </span>
                 {attachments.length === 0 ? (
-                  <p className="text-slate-400 italic py-2">No documents attached yet.</p>
+                  <p className="text-slate-400 italic py-2">No documents or videos attached yet.</p>
                 ) : (
                   attachments.map((att, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-2xs"
+                      className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-2"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center">
-                          {att.type}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-8 h-8 rounded-lg font-bold text-[10px] flex items-center justify-center shrink-0 ${
+                            att.mediaKind === 'video'
+                              ? 'bg-purple-100 text-purple-800'
+                              : att.mediaKind === 'image'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {att.mediaKind === 'video' ? (
+                              <Video className="w-4 h-4" />
+                            ) : att.mediaKind === 'image' ? (
+                              <ImageIcon className="w-4 h-4" />
+                            ) : (
+                              <FileText className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 block truncate">{att.name}</span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              {att.type} · {att.size} {att.mediaKind === 'video' ? '· Video Attachment' : ''}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-bold text-slate-800 block">{att.name}</span>
-                          <span className="text-[11px] text-slate-400">{att.size}</span>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(idx)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAttachment(idx)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {att.mediaKind === 'video' && att.url && (
+                        <video
+                          controls
+                          src={att.url}
+                          className="w-full max-h-48 rounded-lg border border-slate-200 bg-slate-950"
+                        />
+                      )}
                     </div>
                   ))
                 )}

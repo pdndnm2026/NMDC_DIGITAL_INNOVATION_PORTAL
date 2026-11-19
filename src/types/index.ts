@@ -1,7 +1,7 @@
 // NMDC Problem Statement, Vendor Solution & Project Management Portal
 // Enterprise Type Definitions
 
-export type UserRole = 
+export type UserRole =
   | 'public'              // Public Visitor
   | 'executive'           // NMDC Executive / Employee
   | 'dept_head'           // Department Head
@@ -13,61 +13,94 @@ export type UserRole =
   | 'project_manager'     // Project Manager
   | 'admin';              // Portal Administrator
 
-export type MineComplexCode = 'DIOM' | 'KIOM' | 'BCH' | 'KDL';
+export type MineComplexCode = 'HO' | 'DIOM' | 'KIOM' | 'BCH' | 'KDL';
 
 export interface MineComplex {
   id: string;
   code: MineComplexCode;
   name: string;
   fullName: string;
+  shortLabel: string;
+  unitType: 'Head Office' | 'Iron Ore Mine' | 'Mining Complex';
   location: string;
   state: string;
   activeStatus: boolean;
   prefix: string;
+  borPrefix: string;
+  isCorporateAccess?: boolean;
 }
 
-export const AUTHORIZED_MINE_COMPLEXES: MineComplex[] = [
+export const DEFAULT_ORGANISATIONAL_UNITS: MineComplex[] = [
   {
-    id: 'mc-diom',
+    id: 'unit-ho',
+    code: 'HO',
+    name: 'Head Office (Hyderabad)',
+    fullName: 'NMDC Corporate Head Office, Khanij Bhavan',
+    shortLabel: 'Head Office',
+    unitType: 'Head Office',
+    location: 'Masab Tank, Hyderabad',
+    state: 'Telangana',
+    activeStatus: true,
+    prefix: 'HO-PS-2026-',
+    borPrefix: 'HO-BOR-2026-',
+    isCorporateAccess: true,
+  },
+  {
+    id: 'unit-diom',
     code: 'DIOM',
-    name: 'DIOM - Donimalai Iron Ore Mine',
+    name: 'DIOM – Donimalai Iron Ore Mine',
     fullName: 'Donimalai Iron Ore Mine',
-    location: 'Bellary, Karnataka',
+    shortLabel: 'DIOM',
+    unitType: 'Iron Ore Mine',
+    location: 'Sandur, Bellary District',
     state: 'Karnataka',
     activeStatus: true,
     prefix: 'DIOM-PS-2026-',
+    borPrefix: 'DIOM-BOR-2026-',
   },
   {
-    id: 'mc-kiom',
+    id: 'unit-kiom',
     code: 'KIOM',
-    name: 'KIOM - Kumaraswamy Iron Ore Mine',
+    name: 'KIOM – Kumaraswamy Iron Ore Mine',
     fullName: 'Kumaraswamy Iron Ore Mine',
-    location: 'Bellary, Karnataka',
+    shortLabel: 'KIOM',
+    unitType: 'Iron Ore Mine',
+    location: 'Sandur, Bellary District',
     state: 'Karnataka',
     activeStatus: true,
     prefix: 'KIOM-PS-2026-',
+    borPrefix: 'KIOM-BOR-2026-',
   },
   {
-    id: 'mc-bch',
+    id: 'unit-bch',
     code: 'BCH',
     name: 'Bacheli Complex',
-    fullName: 'Bacheli Complex (Bailadila Dep-14/11C)',
-    location: 'Dantewada, Chhattisgarh',
+    fullName: 'Bailadila Iron Ore Mine – Bacheli Complex (Dep-14/11C)',
+    shortLabel: 'Bacheli',
+    unitType: 'Mining Complex',
+    location: 'Bacheli, Dantewada District',
     state: 'Chhattisgarh',
     activeStatus: true,
     prefix: 'BCH-PS-2026-',
+    borPrefix: 'BCH-BOR-2026-',
   },
   {
-    id: 'mc-kdl',
+    id: 'unit-kdl',
     code: 'KDL',
     name: 'Kirandul Complex',
-    fullName: 'Kirandul Complex (Bailadila Dep-5/11B)',
-    location: 'Dantewada, Chhattisgarh',
+    fullName: 'Bailadila Iron Ore Mine – Kirandul Complex (Dep-5/11B)',
+    shortLabel: 'Kirandul',
+    unitType: 'Mining Complex',
+    location: 'Kirandul, Dantewada District',
     state: 'Chhattisgarh',
     activeStatus: true,
     prefix: 'KDL-PS-2026-',
+    borPrefix: 'KDL-BOR-2026-',
   },
 ];
+
+// Kept for backward imports while views receive DB-loaded units via /api/units
+export const AUTHORIZED_MINE_COMPLEXES: MineComplex[] = DEFAULT_ORGANISATIONAL_UNITS;
 
 export interface User {
   id: string;
@@ -75,7 +108,8 @@ export interface User {
   name: string;
   role: UserRole;
   department?: string;
-  employeeId?: string;
+  areaOfWork?: string;
+  employeeId?: string; // SAP Employee ID for NMDC staff
   designation?: string;
   mineComplexCode?: MineComplexCode | 'ALL';
   projectComplex?: string;
@@ -85,6 +119,7 @@ export interface User {
   mobile?: string;
   status?: 'Pending' | 'Active' | 'Suspended';
   passwordHash?: string;
+  verifiedFromEmployeeMaster?: boolean;
   createdAt: string;
 }
 
@@ -100,17 +135,71 @@ export interface EmployeeProfile {
 }
 
 // ---------------------------------------------------------------------------
-// VENDOR TYPES (Section 8)
+// EMPLOYEE MASTER MANAGEMENT (Change Request Section 2)
 // ---------------------------------------------------------------------------
-export type VendorStatus = 'Pending' | 'Under Verification' | 'Approved' | 'Active' | 'Suspended';
+export interface EmployeeMasterRecord {
+  id: string;
+  employeeName: string;
+  sapEmployeeId: string; // Strictly unique
+  officialEmail: string; // Unique wherever provided
+  mobileNumber: string;
+  designation: string;
+  department: string;
+  areaOfWork: string;
+  mineComplexCode: MineComplexCode;
+  mineComplexName: string;
+  location: string;
+  employeeStatus: 'Active' | 'Inactive';
+  createdAt: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export interface EmployeeImportHistory {
+  id: string;
+  timestamp: string;
+  uploadedBy: string;
+  uploadedByRole: string;
+  filename: string;
+  totalRows: number;
+  importedCount: number;
+  updatedCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  errorsSummary: string[];
+}
+
+// ---------------------------------------------------------------------------
+// VENDOR TYPES & COMPULSORY REGISTRATION VALIDATION (Change Request Section 4)
+// ---------------------------------------------------------------------------
+export type VendorStatus =
+  | 'Pending'
+  | 'Under Verification'
+  | 'Approved'
+  | 'Rejected'
+  | 'Active'
+  | 'Suspended';
+
+export type VendorDocType =
+  | 'Registration'
+  | 'PAN'
+  | 'GST'
+  | 'GSTExemption'
+  | 'MSME'
+  | 'AuthorisationLetter'
+  | 'WorkOrder'
+  | 'Startup'
+  | 'Technical'
+  | 'Financial';
 
 export interface VendorDocument {
   id: string;
   vendorId: string;
   title: string;
-  type: 'Registration' | 'GST' | 'PAN' | 'MSME' | 'Startup' | 'Technical' | 'WorkOrder' | 'Financial';
+  type: VendorDocType;
   fileName: string;
   fileSize: string;
+  mimeType?: string;
   uploadedAt: string;
   status: 'Verified' | 'Pending' | 'Rejected';
 }
@@ -118,11 +207,16 @@ export interface VendorDocument {
 export interface Vendor {
   id: string;
   name: string;
-  legalEntity: 'Private Limited' | 'Public Limited' | 'LLP' | 'Partnership' | 'Proprietorship';
+  legalEntity: 'Private Limited' | 'Public Limited' | 'LLP' | 'Partnership' | 'Proprietorship' | 'PSU / Govt Body';
   cin: string;
   pan: string;
+  gstExempt: boolean;
+  gstExemptionReason?: string;
   gstin: string;
   registeredAddress: string;
+  state: string;
+  pinCode: string;
+  country: string;
   website: string;
   yearEstablished: number;
   companySize: '1-10' | '11-50' | '51-200' | '201-500' | '500+';
@@ -132,6 +226,10 @@ export interface Vendor {
   designation: string;
   email: string;
   mobile: string;
+  alternateMobile?: string;
+  natureOfBusiness: string;
+  businessCategory: string;
+  companyProfile: string;
   areasOfExpertise: string[];
   capabilities: string[];
   miningExperienceYears: number;
@@ -139,27 +237,30 @@ export interface Vendor {
   majorCustomers: string[];
   annualTurnoverCr: number;
   netWorthCr: number;
+  declarationAccepted: boolean;
+  declarationTimestamp?: string;
   status: VendorStatus;
+  rejectionReason?: string;
   performanceScore: number; // 0 - 100
   documents: VendorDocument[];
+  isDemo?: boolean;
   createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
-// PROBLEM STATEMENT TYPES (Sections 6 & 7)
-// Workflow: Draft → Submitted → Department Review → Approval → Published → Vendor Participation
+// PROBLEM STATEMENT TYPES (With Video Upload + Demo Isolation)
 // ---------------------------------------------------------------------------
-export type ProblemStatementStatus = 
-  | 'Draft' 
-  | 'Submitted' 
-  | 'Department Review' 
-  | 'Approval' 
-  | 'Published' 
-  | 'Vendor Participation' 
-  | 'Technical Evaluation' 
-  | 'Commercial Evaluation' 
-  | 'PoC Underway' 
-  | 'Award Sanctioned' 
+export type ProblemStatementStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'Department Review'
+  | 'Approval'
+  | 'Published'
+  | 'Vendor Participation'
+  | 'Technical Evaluation'
+  | 'Commercial Evaluation'
+  | 'PoC Underway'
+  | 'Award Sanctioned'
   | 'Closed';
 
 export interface ProblemStatementApprovalRecord {
@@ -190,13 +291,21 @@ export interface ClarificationQuery {
   isCommonToAll: boolean;
 }
 
+export interface AttachmentFile {
+  name: string;
+  size: string;
+  type: string;
+  mediaKind?: 'document' | 'image' | 'video';
+  url?: string;
+}
+
 export interface ProblemStatement {
   id: string;
-  code: string; // e.g. DIOM-PS-2026-0001
+  code: string; // e.g. DIOM-PS-2026-0001 or HO-PS-2026-0001
   mineComplexCode: MineComplexCode;
   mineComplexName: string;
   title: string;
-  
+
   // Basic Details
   department: string;
   projectComplex: string;
@@ -230,8 +339,8 @@ export interface ProblemStatement {
   requiredVendorExperience: string;
   submissionDeadline: string;
 
-  // Attachments
-  attachments: { name: string; size: string; type: string; url?: string }[];
+  // Attachments (Docs, Images & Videos: MP4/WebM/MOV)
+  attachments: AttachmentFile[];
 
   // Workflow & Audit
   status: ProblemStatementStatus;
@@ -240,25 +349,77 @@ export interface ProblemStatement {
   approvals: ProblemStatementApprovalRecord[];
   clarifications: ClarificationQuery[];
   respondedVendorsCount: number;
+  isDemo?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// VENDOR PROPOSAL & BUDGETARY OFFER (Section 10)
-// Part A: Technical Proposal
-// Part B: Commercial Proposal (item-wise costing)
-// Part C: Commercial Conditions
+// BUDGETARY OFFER REQUEST MODULE (Change Request Section 5)
 // ---------------------------------------------------------------------------
-export type ProposalStatus = 
-  | 'Draft' 
-  | 'Submitted' 
-  | 'Under Technical Evaluation' 
-  | 'Technically Qualified' 
-  | 'Technically Disqualified' 
-  | 'Clarification Required' 
-  | 'Under Commercial Evaluation' 
-  | 'PoC Recommended' 
-  | 'Award Recommended' 
-  | 'Awarded' 
+export type BudgetaryRequestStatus =
+  | 'Draft'
+  | 'Pending Approval'
+  | 'Approved'
+  | 'Published'
+  | 'Closed'
+  | 'Cancelled';
+
+export interface DeadlineExtensionRecord {
+  previousDeadline: string;
+  newDeadline: string;
+  approvedBy: string;
+  approvalRemarks: string;
+  timestamp: string;
+}
+
+export interface BudgetaryOfferRequest {
+  id: string;
+  requestCode: string; // e.g. DIOM-BOR-2026-0001
+  mineComplexCode: MineComplexCode;
+  mineComplexName: string;
+  linkedProblemStatementId?: string;
+  linkedProblemStatementCode?: string;
+  title: string;
+  department: string;
+  requirementCategory: string;
+  scopeOfWork: string;
+  technicalSpecifications: string;
+  deliverables: string;
+  estimatedBudgetCr: number;
+  submissionDeadline: string;
+  visibilityScope: 'ALL_ELIGIBLE' | 'INVITED_ONLY';
+  invitedVendorIds: string[];
+  invitedVendorNames: string[];
+  status: BudgetaryRequestStatus;
+  createdBy: string;
+  createdByDesignation: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  publishedAt?: string;
+  closedAt?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+  deadlineHistory: DeadlineExtensionRecord[];
+  disclaimerText: string;
+  attachments: AttachmentFile[];
+  responsesCount: number;
+  isDemo?: boolean;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// VENDOR PROPOSAL & BUDGETARY OFFER RESPONSE
+// ---------------------------------------------------------------------------
+export type ProposalStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'Under Technical Evaluation'
+  | 'Technically Qualified'
+  | 'Technically Disqualified'
+  | 'Clarification Required'
+  | 'Under Commercial Evaluation'
+  | 'PoC Recommended'
+  | 'Award Recommended'
+  | 'Awarded'
   | 'Rejected';
 
 export interface CommercialItemCost {
@@ -285,7 +446,7 @@ export interface ProposalCommercialConditions {
   paymentTerms: string;
   warrantyPeriodMonths: number;
   amcYears: number;
-  priceBasis: string; // e.g. "FOR Destination Bailadila Iron Ore Project (Kirandul/Bacheli)"
+  priceBasis: string;
   taxesAndDuties: string;
   otherCommercialConditions: string;
 }
@@ -300,9 +461,11 @@ export interface ProposalVersionHistory {
 
 export interface Proposal {
   id: string;
-  proposalCode: string; // e.g. PROP-2026-VND01-001
+  proposalCode: string; // e.g. DIOM-PROP-2026-0001
   mineComplexCode: MineComplexCode;
   mineComplexName: string;
+  budgetaryRequestId?: string;
+  budgetaryRequestCode?: string;
   problemStatementId: string;
   problemStatementCode: string;
   problemStatementTitle: string;
@@ -330,7 +493,7 @@ export interface Proposal {
   amcScope: string;
   trainingScope: string;
   technicalDeviations: string;
-  supportingDocuments: { name: string; size: string; type: string }[];
+  supportingDocuments: AttachmentFile[];
 
   // Part B: Commercial Proposal
   costBreakdown: CommercialItemCost;
@@ -347,10 +510,51 @@ export interface Proposal {
   commercialRank?: 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
   committeeRecommendation?: 'Recommend PoC' | 'Recommend Award of Work' | 'Keep on Standby' | 'Clarification Required' | 'Reject';
   committeeComments?: string;
+  isDemo?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// TECHNICAL & COMMERCIAL EVALUATION (Sections 12 & 13)
+// DISCUSSION & CLARIFICATIONS FACILITY (Change Request Section 6)
+// Immutable official record; strict vendor privacy
+// ---------------------------------------------------------------------------
+export interface DiscussionMessage {
+  id: string;
+  threadId: string;
+  senderId: string;
+  senderName: string;
+  senderOrganisation: string;
+  senderRole: UserRole;
+  messageText: string;
+  attachments: AttachmentFile[];
+  timestamp: string;
+  isOfficialClarification?: boolean;
+}
+
+export interface DiscussionThread {
+  id: string;
+  threadCode: string; // e.g. DIOM-DSC-2026-0001
+  mineComplexCode: MineComplexCode;
+  linkedEntityType: 'PROBLEM' | 'BUDGETARY_REQUEST';
+  linkedEntityId: string;
+  linkedEntityCode: string;
+  linkedEntityTitle: string;
+  subject: string;
+  vendorId?: string; // Owning vendor for confidential 1:1 threads
+  vendorName?: string;
+  isCommonPublic: boolean; // True = official clarification published to all vendors
+  status: 'Open' | 'Closed';
+  closedBy?: string;
+  closedAt?: string;
+  unreadByVendor: number;
+  unreadByOfficer: number;
+  messages: DiscussionMessage[];
+  isDemo?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// TECHNICAL & COMMERCIAL EVALUATION
 // ---------------------------------------------------------------------------
 export interface TechnicalEvaluationParameter {
   id: string;
@@ -392,23 +596,22 @@ export interface TechnicalEvaluationReport {
 }
 
 // ---------------------------------------------------------------------------
-// PROOF OF CONCEPT (PoC) MANAGEMENT (Section 14)
-// Status: Proposed → Under Approval → Approved → Scheduled → Under Trial → Evaluation → Successful / Unsuccessful → Closed
+// PROOF OF CONCEPT (PoC) MANAGEMENT
 // ---------------------------------------------------------------------------
-export type PocStatus = 
-  | 'Proposed' 
-  | 'Under Approval' 
-  | 'Approved' 
-  | 'Scheduled' 
-  | 'Under Trial' 
-  | 'Evaluation' 
-  | 'Successful' 
-  | 'Unsuccessful' 
+export type PocStatus =
+  | 'Proposed'
+  | 'Under Approval'
+  | 'Approved'
+  | 'Scheduled'
+  | 'Under Trial'
+  | 'Evaluation'
+  | 'Successful'
+  | 'Unsuccessful'
   | 'Closed';
 
 export interface PocRecord {
   id: string;
-  pocCode: string; // e.g. DIOM-POC-2026-01
+  pocCode: string;
   mineComplexCode: MineComplexCode;
   mineComplexName: string;
   relatedProblemStatementId: string;
@@ -416,8 +619,8 @@ export interface PocRecord {
   problemStatementTitle: string;
   vendorId: string;
   vendorName: string;
-  trialLocation: string; // e.g. Bailadila Deposit 14 Screening Plant
-  equipmentProcess: string; // e.g. Tertiary Cone Crusher Chute
+  trialLocation: string;
+  equipmentProcess: string;
   pocScope: string;
   trialPeriodWeeks: number;
   startDate: string;
@@ -427,7 +630,7 @@ export interface PocRecord {
   evaluationParameters: string[];
   nmdcCommitteeMembers: string[];
   vendorResponsibilities: string;
-  trialCost: number; // In Rupees
+  trialCost: number;
   actualResults?: string;
   observations?: string;
   recommendations?: string;
@@ -435,16 +638,17 @@ export interface PocRecord {
   progressPct: number;
   trialReports: { name: string; date: string; author: string }[];
   isClosed: boolean;
+  isDemo?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// PROCUREMENT PROCESSING & AWARD OF WORK (Sections 15 & 16)
+// PROCUREMENT PROCESSING & AWARD OF WORK
 // ---------------------------------------------------------------------------
-export type ProcurementMethod = 
-  | 'Open E-Tender' 
-  | 'GeM Custom Bid' 
-  | 'Limited Tender Enquiry' 
-  | 'Proprietary / Single Source' 
+export type ProcurementMethod =
+  | 'Open E-Tender'
+  | 'GeM Custom Bid'
+  | 'Limited Tender Enquiry'
+  | 'Proprietary / Single Source'
   | 'Nominative Sanction';
 
 export interface ProcurementProcessingRecord {
@@ -469,7 +673,7 @@ export interface ProcurementProcessingRecord {
 
 export interface AwardOfWork {
   id: string;
-  awardCode: string; // e.g. DIOM-AOW-2026-001
+  awardCode: string;
   mineComplexCode: MineComplexCode;
   mineComplexName: string;
   problemStatementId: string;
@@ -505,13 +709,13 @@ export interface AwardOfWork {
   projectComplex: string;
   status: 'Sanctioned' | 'Contract Signed' | 'Under Execution' | 'Completed';
   documents: { name: string; type: string; date: string }[];
+  isDemo?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// PROJECT EXECUTION MANAGEMENT (Section 17 & 18)
-// 12 Standard Project Stages
+// PROJECT EXECUTION MANAGEMENT (12 Standard Stages)
 // ---------------------------------------------------------------------------
-export type ProjectStage = 
+export type ProjectStage =
   | 'Project Initiation'
   | 'Requirement Finalisation'
   | 'Engineering'
@@ -557,7 +761,7 @@ export interface ProjectSlaRecord {
 
 export interface Project {
   id: string;
-  projectCode: string; // e.g. DIOM-PRJ-2026-01
+  projectCode: string;
   mineComplexCode: MineComplexCode;
   mineComplexName: string;
   awardId: string;
@@ -588,6 +792,7 @@ export interface Project {
   performanceScore: number;
   reports: { title: string; date: string; author: string }[];
   benefits?: any[];
+  isDemo?: boolean;
 }
 
 export interface Idea {
@@ -602,7 +807,7 @@ export interface Idea {
 }
 
 // ---------------------------------------------------------------------------
-// AUDIT, NOTIFICATIONS & STATS (Sections 20, 21, 22, 23)
+// AUDIT, NOTIFICATIONS & STATS
 // ---------------------------------------------------------------------------
 export interface ActivityLog {
   id: string;
@@ -645,6 +850,7 @@ export interface AppNotification {
 export interface PortalStats {
   totalProblemStatements: number;
   openOpportunities: number;
+  budgetaryRequestsActive: number;
   registeredVendors: number;
   budgetaryOffersReceived: number;
   pocsCompleted: number;
@@ -654,3 +860,9 @@ export interface PortalStats {
   projectsCompleted: number;
   totalAwardedValueCr: number;
 }
+
+export const VENDOR_DECLARATION_TEXT =
+  'I hereby declare that all information and documents submitted are true, accurate and genuine to the best of my knowledge. I understand that any false or misleading information may result in rejection or blacklisting.';
+
+export const BUDGETARY_DISCLAIMER_TEXT =
+  'NON-BINDING BUDGETARY REQUEST: This Budgetary Offer Request (BOR) is issued solely for technical feasibility evaluation and budgetary cost estimation. Submission of a budgetary offer does not constitute a tender bid, financial commitment, or obligation to award work.';

@@ -1,28 +1,31 @@
 import React, { useState } from 'react';
-import { Project, ProjectMilestone, HealthStatus, UserRole, User, ProjectStage, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
+import {
+  Project,
+  HealthStatus,
+  UserRole,
+  User,
+  ProjectStage,
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS
+} from '../types/index.js';
 import { GanttChart } from '../components/GanttChart.js';
 import { 
   Briefcase, 
   Layers, 
-  CheckCircle2, 
   Clock, 
-  AlertTriangle, 
-  IndianRupee, 
   Building2, 
-  FileText, 
   ShieldCheck,
-  Award,
-  Calendar,
   Check,
-  ChevronRight,
-  TrendingUp,
+  MapPin,
   AlertCircle,
-  MapPin
+  X
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface ProjectsViewProps {
   projects: Project[];
+  organisationalUnits?: MineComplex[];
   currentRole: UserRole;
   currentUser: User | null;
   activeComplexCode?: MineComplexCode | 'ALL';
@@ -31,14 +34,15 @@ interface ProjectsViewProps {
 
 export const ProjectsView: React.FC<ProjectsViewProps> = ({
   projects,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
   currentRole,
-  currentUser,
   activeComplexCode = 'ALL',
   onRefreshProjects,
 }) => {
   const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'gantt' | 'stages' | 'sla' | 'award'>('gantt');
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const filteredProjects = projects.filter((p) => {
     if (selectedComplexFilter !== 'ALL' && p.mineComplexCode && p.mineComplexCode !== selectedComplexFilter) {
@@ -75,13 +79,14 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           actualFinishDate: progressPct === 100 ? new Date().toISOString().substring(0, 10) : undefined,
         }),
       });
+      setErrorBanner(null);
       onRefreshProjects();
     } catch (e: any) {
-      alert(`Error updating milestone: ${e.message}`);
+      setErrorBanner(`Error updating milestone: ${e.message}`);
     }
   };
 
-  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
+  const activeComplexObj = organisationalUnits.find(c => c.code === selectedComplexFilter);
 
   return (
     <div className="space-y-6 pb-16">
@@ -90,15 +95,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-blue-700 font-bold uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-              PROJECT EXECUTION & GANTT MONITORING · SECTIONS 17, 18 & 19
+              PROJECT EXECUTION &amp; GANTT MONITORING · SECTIONS 17, 18 &amp; 19
             </span>
             <span className="text-slate-400">·</span>
             <span className="text-slate-500 font-medium text-xs">
-              {selectedComplexFilter === 'ALL' ? 'All Complexes' : activeComplexObj?.name}: {filteredProjects.length} Projects
+              {selectedComplexFilter === 'ALL' ? 'All 5 Units' : activeComplexObj?.name}: {filteredProjects.length} Projects
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1">
-            Project Execution, Milestones & Contract Monitoring
+            Project Execution, Milestones &amp; Contract Monitoring
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Real-time physical and financial progress tracking, interactive Gantt charts, SLA compliance and vendor performance.
@@ -106,7 +111,19 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         </div>
       </div>
 
-      {/* Complex Filter Pills */}
+      {errorBanner && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorBanner}</span>
+          </div>
+          <button onClick={() => setErrorBanner(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Organisational Unit Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           onClick={() => setSelectedComplexFilter('ALL')}
@@ -117,10 +134,10 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>All 4 Complexes</span>
+          <span>All 5 Units</span>
         </button>
 
-        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+        {organisationalUnits.filter(c => c.activeStatus).map((complex) => {
           const isActive = selectedComplexFilter === complex.code;
           const count = projects.filter(p => p.mineComplexCode === complex.code).length;
           return (
@@ -134,8 +151,8 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
-              <span>{complex.name}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              <span>{complex.shortLabel || complex.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
                 {count}
               </span>
             </button>
@@ -175,9 +192,16 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="font-mono text-[10px] font-bold text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-200">
-                        {proj.projectCode}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono text-[10px] font-bold text-blue-700 bg-white px-1.5 py-0.5 rounded border border-blue-200">
+                          {proj.projectCode}
+                        </span>
+                        {proj.isDemo && (
+                          <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[9px] font-bold">
+                            DEMO
+                          </span>
+                        )}
+                      </div>
                       <span
                         className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                           proj.health === 'Completed'
@@ -391,7 +415,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                                 isCompleted
                                 ? 'bg-emerald-600 text-white'
                                 : isCurrent
-                                ? 'bg-blue-700 text-white animate-pulse'
+                                ? 'bg-blue-700 text-white'
                                 : 'bg-slate-100 text-slate-400'
                               }`}
                             >

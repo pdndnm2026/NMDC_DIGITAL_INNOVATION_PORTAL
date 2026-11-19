@@ -1,27 +1,25 @@
-import React, { useState } from 'react';
-import { PortalStats, ProblemStatement } from '../types/index.js';
+import React from 'react';
+import {
+  PortalStats,
+  ProblemStatement,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS
+} from '../types/index.js';
 import { 
   ArrowRight, 
   Briefcase, 
   ShieldCheck, 
-  CheckCircle2, 
-  Clock, 
   IndianRupee, 
   Building2, 
-  FileText, 
-  Bell, 
   ChevronRight,
-  ExternalLink,
-  Award,
-  Layers,
   MapPin,
-  Calendar,
-  Users
+  Calendar
 } from 'lucide-react';
 
 interface LandingViewProps {
   stats: PortalStats;
   problemStatements: ProblemStatement[];
+  organisationalUnits?: MineComplex[];
   onNavigateTab: (tab: string) => void;
   onOpenCreateProblem: () => void;
   onOpenRegisterVendor: () => void;
@@ -32,11 +30,11 @@ interface LandingViewProps {
 export const LandingView: React.FC<LandingViewProps> = ({
   stats,
   problemStatements,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
   onNavigateTab,
   onOpenCreateProblem,
   onOpenRegisterVendor,
   onSelectProblemStatement,
-  onOpenLogin,
 }) => {
   const publishedOpportunities = problemStatements.filter(
     (p) => p.status === 'Published' || p.status === 'Vendor Participation'
@@ -47,9 +45,16 @@ export const LandingView: React.FC<LandingViewProps> = ({
       {/* 1. HERO BANNER WITH OFFICIAL MANDATED TITLE & SUBTITLE */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-blue-900 text-white shadow-xl border border-slate-800">
         <div className="relative z-10 max-w-4xl p-8 sm:p-12 lg:p-14 space-y-5">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-300 bg-amber-500/20 px-3 py-1 rounded-md border border-amber-400/30">
-            <ShieldCheck className="w-4 h-4 text-amber-300" />
-            <span>NMDC LIMITED · ENTERPRISE WORKFLOW MANAGEMENT PORTAL</span>
+          <div className="flex items-center gap-4">
+            <img
+              src="/assets/aistudio/nmdc_logo_72562162.jpg"
+              alt="NMDC Limited Logo"
+              className="h-16 w-auto object-contain bg-white rounded-xl p-1.5 border border-slate-200 shadow-sm shrink-0"
+            />
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-300 bg-amber-500/20 px-3 py-1 rounded-md border border-amber-400/30">
+              <ShieldCheck className="w-4 h-4 text-amber-300" />
+              <span>NMDC LIMITED · ENTERPRISE WORKFLOW MANAGEMENT PORTAL</span>
+            </div>
           </div>
 
           <div>
@@ -178,104 +183,45 @@ export const LandingView: React.FC<LandingViewProps> = ({
         </div>
       </section>
 
-      {/* 3. FOUR MINE MODULES STRIPE */}
+      {/* 3. FIVE ORGANISATIONAL UNITS STRIPE */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <MapPin className="w-5 h-5 text-blue-700" />
-            <span>Four Operating Mine & Production Complexes</span>
+            <span>Five Organisational Units (Head Office &amp; 4 Mining Complexes)</span>
           </h2>
-          <span className="text-xs text-slate-500 font-mono">Dedicated Modules</span>
+          <span className="text-xs text-slate-500 font-mono">Database-Configured Units</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                MODULE 1
-              </span>
-              <span className="text-[11px] font-bold text-slate-400 font-mono">DIOM</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          {organisationalUnits.filter((u) => u.activeStatus).map((unit, idx) => (
+            <div
+              key={unit.code}
+              className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all flex flex-col justify-between space-y-2"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    UNIT {idx + 1}
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-500 font-mono">{unit.code}</span>
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm leading-snug">{unit.name}</h3>
+                <p className="text-slate-500 text-xs">{unit.location}, {unit.state}</p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="text-slate-500 tabular-nums">
+                  {problemStatements.filter(p => p.mineComplexCode === unit.code).length} Problems
+                </span>
+                <button
+                  onClick={() => onNavigateTab('problems')}
+                  className="text-blue-700 font-bold hover:underline"
+                >
+                  Explore →
+                </button>
+              </div>
             </div>
-            <h3 className="font-bold text-slate-900 text-sm">Donimalai Iron Ore Mine</h3>
-            <p className="text-slate-500 text-xs">Bellary District, Karnataka</p>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">
-                {problemStatements.filter(p => p.mineComplexCode === 'DIOM').length} Problems
-              </span>
-              <button 
-                onClick={() => onNavigateTab('problems')}
-                className="text-blue-700 font-bold hover:underline"
-              >
-                Explore →
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                MODULE 2
-              </span>
-              <span className="text-[11px] font-bold text-slate-400 font-mono">KIOM</span>
-            </div>
-            <h3 className="font-bold text-slate-900 text-sm">Kumaraswamy Iron Ore Mine</h3>
-            <p className="text-slate-500 text-xs">Sandur / Bellary, Karnataka</p>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">
-                {problemStatements.filter(p => p.mineComplexCode === 'KIOM').length} Problems
-              </span>
-              <button 
-                onClick={() => onNavigateTab('problems')}
-                className="text-blue-700 font-bold hover:underline"
-              >
-                Explore →
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                MODULE 3
-              </span>
-              <span className="text-[11px] font-bold text-slate-400 font-mono">BCH</span>
-            </div>
-            <h3 className="font-bold text-slate-900 text-sm">Bacheli Complex</h3>
-            <p className="text-slate-500 text-xs">Bailadila Deposit 14 & 11C, Chhattisgarh</p>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">
-                {problemStatements.filter(p => p.mineComplexCode === 'BCH').length} Problems
-              </span>
-              <button 
-                onClick={() => onNavigateTab('problems')}
-                className="text-blue-700 font-bold hover:underline"
-              >
-                Explore →
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-400 transition-all space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                MODULE 4
-              </span>
-              <span className="text-[11px] font-bold text-slate-400 font-mono">KDL</span>
-            </div>
-            <h3 className="font-bold text-slate-900 text-sm">Kirandul Complex</h3>
-            <p className="text-slate-500 text-xs">Bailadila Deposit 5 & 10, Chhattisgarh</p>
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">
-                {problemStatements.filter(p => p.mineComplexCode === 'KDL').length} Problems
-              </span>
-              <button 
-                onClick={() => onNavigateTab('problems')}
-                className="text-blue-700 font-bold hover:underline"
-              >
-                Explore →
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
@@ -320,10 +266,17 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {ps.code}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {ps.code}
+                      </span>
+                      {ps.isDemo && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[9px] font-bold">
+                          DEMO
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       {ps.status}
                     </span>

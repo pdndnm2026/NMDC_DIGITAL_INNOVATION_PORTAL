@@ -285,9 +285,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         {/* NMDC Letterhead Header */}
         <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded bg-blue-900 text-white flex flex-col items-center justify-center font-bold text-xs">
-              <span>NMDC</span>
-            </div>
+            <img
+              src="/assets/aistudio/nmdc_logo_72562162.jpg"
+              alt="NMDC Limited Logo"
+              className="h-14 w-auto object-contain bg-white rounded p-0.5 border border-slate-200 shrink-0"
+            />
             <div>
               <div className="text-base font-extrabold text-slate-900 uppercase tracking-tight">
                 National Mineral Development Corporation Limited

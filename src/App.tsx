@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  UserRole, 
-  User, 
-  PortalStats, 
-  ProblemStatement, 
-  Proposal, 
-  Project, 
-  Vendor, 
+import {
+  UserRole,
+  User,
+  PortalStats,
+  ProblemStatement,
+  BudgetaryOfferRequest,
+  DiscussionThread,
+  Proposal,
+  Project,
+  Vendor,
   PocRecord,
-  AwardOfWork, 
-  EvaluationParameter, 
-  AppNotification, 
+  AwardOfWork,
+  EvaluationParameter,
+  AppNotification,
   ActivityLog,
-  MineComplexCode
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS,
 } from './types/index.js';
 import { Header } from './components/Header.js';
 import { NotificationDrawer } from './components/NotificationDrawer.js';
@@ -24,12 +28,18 @@ import { CreateProblemStatementModal } from './components/CreateProblemStatement
 import { PortalLoginPage } from './views/PortalLoginPage.js';
 import { LandingView } from './views/LandingView.js';
 import { ExecutiveDashboardView } from './views/ExecutiveDashboardView.js';
+import { MineSelectionView } from './views/MineSelectionView.js';
 import { ChallengesView } from './views/ChallengesView.js';
+import { BudgetaryOffersView } from './views/BudgetaryOffersView.js';
 import { ProposalsView } from './views/ProposalsView.js';
+import { DiscussionsView } from './views/DiscussionsView.js';
 import { PocManagementView } from './views/PocManagementView.js';
 import { AwardsView } from './views/AwardsView.js';
 import { ProjectsView } from './views/ProjectsView.js';
 import { VendorsView } from './views/VendorsView.js';
+import { EmployeeMasterView } from './views/EmployeeMasterView.js';
+import { MisReportsView } from './views/MisReportsView.js';
+import { AdministrationView } from './views/AdministrationView.js';
 import { AnalyticsView } from './views/AnalyticsView.js';
 import { ReportsView } from './views/ReportsView.js';
 import { ActivityMonitorView } from './views/ActivityMonitorView.js';
@@ -38,22 +48,42 @@ import { AuthModal } from './views/AuthModal.js';
 
 import { fetchApi } from './utils/api.js';
 
+const INITIAL_ADMIN_SESSION: User = {
+  id: 'usr-admin-1',
+  email: 'admin@nmdc.co.in',
+  name: 'Rajendra Prasad Verma',
+  role: 'admin',
+  employeeId: '10024501',
+  designation: 'General Manager (IT & Systems)',
+  department: 'Corporate IT & Executive Cell',
+  mineComplexCode: 'ALL',
+  projectComplex: 'Head Office & All Mining Complexes',
+  location: 'Khanij Bhavan, Hyderabad',
+  mobile: '9849012301',
+  status: 'Active',
+  verifiedFromEmployeeMaster: true,
+  createdAt: '2026-01-05T09:30:00Z',
+};
+
 export function App() {
-  // Authentication Gateway state: starts at login page
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentRole, setCurrentRole] = useState<UserRole>('public');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Opens directly into the Clusterized Portal with full pre-populated enterprise data;
+  // Sign Out / Switch User opens the clean PortalLoginPage anytime.
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [currentUser, setCurrentUser] = useState<User | null>(INITIAL_ADMIN_SESSION);
 
-  // Active Mine / Operating Complex Module ('ALL' for corporate view, or 'DIOM' | 'KIOM' | 'BCH' | 'KDL')
   const [activeComplexCode, setActiveComplexCode] = useState<MineComplexCode | 'ALL'>('ALL');
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
 
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const [showDemoData, setShowDemoData] = useState<boolean>(false);
+  const [hasDemoData, setHasDemoData] = useState<boolean>(false);
 
-  // Core Portal Data - Zero mock defaults: everything strictly from DB
+  const [organisationalUnits, setOrganisationalUnits] = useState<MineComplex[]>(DEFAULT_ORGANISATIONAL_UNITS);
   const [stats, setStats] = useState<PortalStats>({
     totalProblemStatements: 0,
     openOpportunities: 0,
     registeredVendors: 0,
+    budgetaryRequestsActive: 0,
     budgetaryOffersReceived: 0,
     pocsCompleted: 0,
     pocsUnderExecution: 0,
@@ -64,6 +94,8 @@ export function App() {
   });
 
   const [problemStatements, setProblemStatements] = useState<ProblemStatement[]>([]);
+  const [budgetaryRequests, setBudgetaryRequests] = useState<BudgetaryOfferRequest[]>([]);
+  const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [pocs, setPocs] = useState<PocRecord[]>([]);
   const [awards, setAwards] = useState<AwardOfWork[]>([]);
@@ -73,39 +105,74 @@ export function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
 
-  // Modals state
+  // Modals & Context
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'login' | 'register-exec' | 'register-vendor'>('login');
   const [createProblemOpen, setCreateProblemOpen] = useState(false);
   const [selectedPsForProposal, setSelectedPsForProposal] = useState<ProblemStatement | null>(null);
+  const [selectedBorForProposal, setSelectedBorForProposal] = useState<BudgetaryOfferRequest | null>(null);
   const [selectedPsForCompare, setSelectedPsForCompare] = useState<ProblemStatement | null>(null);
   const [selectedProposalForEvaluation, setSelectedProposalForEvaluation] = useState<Proposal | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [preselectedDiscussionEntity, setPreselectedDiscussionEntity] = useState<{
+    type: 'PROBLEM' | 'BUDGETARY_REQUEST';
+    id: string;
+    code: string;
+    title: string;
+    mineComplexCode: string;
+  } | null>(null);
 
-  // Load all initial data on mount and whenever complex filter changes
   useEffect(() => {
     loadAllData();
-  }, [activeComplexCode]);
+  }, [activeComplexCode, showDemoData, currentRole, currentUser?.vendorId]);
 
   const loadAllData = async () => {
     try {
-      const complexQuery = activeComplexCode !== 'ALL' ? `?mineComplex=${activeComplexCode}` : '';
-      const [sRes, psRes, prRes, pocRes, aRes, projRes, vRes, paramRes, notifRes, actRes] = await Promise.allSettled([
-        fetchApi(`/api/stats${complexQuery}`),
-        fetchApi(`/api/problems${complexQuery}`),
-        fetchApi(`/api/proposals${complexQuery}`),
-        fetchApi(`/api/pocs${complexQuery}`),
-        fetchApi(`/api/awards${complexQuery}`),
-        fetchApi(`/api/projects${complexQuery}`),
+      const unitParam = activeComplexCode !== 'ALL' ? `mineComplex=${activeComplexCode}` : '';
+      const unitQuery = unitParam ? `?${unitParam}` : '';
+      const statsQuery = `?${[unitParam, `includeDemo=${showDemoData}`].filter(Boolean).join('&')}`;
+      const discussionQuery = `?viewerRole=${currentRole}${currentUser?.vendorId ? `&vendorId=${encodeURIComponent(currentUser.vendorId)}` : ''}`;
+
+      const [
+        unitsRes,
+        sRes,
+        psRes,
+        borRes,
+        prRes,
+        discRes,
+        pocRes,
+        aRes,
+        projRes,
+        vRes,
+        paramRes,
+        notifRes,
+        actRes,
+        demoStatusRes,
+      ] = await Promise.allSettled([
+        fetchApi('/api/units'),
+        fetchApi(`/api/stats${statsQuery}`),
+        fetchApi(`/api/problems${unitQuery}`),
+        fetchApi(`/api/budgetary-requests${unitQuery}`),
+        fetchApi(`/api/proposals${unitQuery}`),
+        fetchApi(`/api/discussions${discussionQuery}`),
+        fetchApi(`/api/pocs${unitQuery}`),
+        fetchApi(`/api/awards${unitQuery}`),
+        fetchApi(`/api/projects${unitQuery}`),
         fetchApi('/api/vendors'),
         fetchApi('/api/evaluation-parameters'),
         fetchApi('/api/notifications'),
         fetchApi('/api/activities'),
+        fetchApi('/api/demo/status'),
       ]);
 
+      if (unitsRes.status === 'fulfilled' && unitsRes.value.success && Array.isArray(unitsRes.value.data)) {
+        setOrganisationalUnits(unitsRes.value.data);
+      }
       if (sRes.status === 'fulfilled' && sRes.value.success) setStats(sRes.value.data);
       if (psRes.status === 'fulfilled' && psRes.value.success) setProblemStatements(psRes.value.data);
+      if (borRes.status === 'fulfilled' && borRes.value.success) setBudgetaryRequests(borRes.value.data);
       if (prRes.status === 'fulfilled' && prRes.value.success) setProposals(prRes.value.data);
+      if (discRes.status === 'fulfilled' && discRes.value.success) setDiscussions(discRes.value.data);
       if (pocRes.status === 'fulfilled' && pocRes.value.success) setPocs(pocRes.value.data);
       if (aRes.status === 'fulfilled' && aRes.value.success) setAwards(aRes.value.data);
       if (projRes.status === 'fulfilled' && projRes.value.success) setProjects(projRes.value.data);
@@ -113,9 +180,30 @@ export function App() {
       if (paramRes.status === 'fulfilled' && paramRes.value.success) setParameters(paramRes.value.data);
       if (notifRes.status === 'fulfilled' && notifRes.value.success) setNotifications(notifRes.value.data);
       if (actRes.status === 'fulfilled' && actRes.value.success) setActivities(actRes.value.data);
+      if (demoStatusRes.status === 'fulfilled' && demoStatusRes.value.success) {
+        const exists = Boolean(demoStatusRes.value.data?.hasDemoData);
+        setHasDemoData(exists);
+        if (!exists && showDemoData) setShowDemoData(false);
+      }
     } catch (e) {
       console.error('Data load error:', e);
     }
+  };
+
+  const handleLoadDemoData = async () => {
+    const res = await fetchApi<{ success: boolean; error?: string }>('/api/demo/load', { method: 'POST' });
+    if (!res.success) throw new Error(res.error || 'Failed to load Demo Showcase dataset.');
+    setHasDemoData(true);
+    setShowDemoData(true);
+    await loadAllData();
+  };
+
+  const handleClearDemoData = async () => {
+    const res = await fetchApi<{ success: boolean; error?: string }>('/api/demo/clear', { method: 'DELETE' });
+    if (!res.success) throw new Error(res.error || 'Failed to clear Demo Showcase dataset.');
+    setHasDemoData(false);
+    setShowDemoData(false);
+    await loadAllData();
   };
 
   const handleLogout = () => {
@@ -123,14 +211,13 @@ export function App() {
     setCurrentUser(null);
     setCurrentRole('public');
     setActiveComplexCode('ALL');
+    setActiveTab('dashboard');
   };
 
   const handleMarkNotifRead = async (id: string) => {
     try {
       await fetchApi(`/api/notifications/${id}/read`, { method: 'PATCH' });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-      );
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     } catch (e) {
       console.error(e);
     }
@@ -138,7 +225,26 @@ export function App() {
 
   const currentVendorObj = vendors.find((v) => v.id === currentUser?.vendorId) || null;
 
-  // 1. RENDER CLEAN SIGN-IN / REGISTRATION GATEWAY IF NOT AUTHENTICATED
+  const filterDemo = <T extends { isDemo?: boolean }>(items: T[]): T[] =>
+    showDemoData ? items : items.filter((item) => !item.isDemo);
+
+  const visibleProblemStatements = filterDemo(problemStatements);
+  const visibleBudgetaryRequests = filterDemo(budgetaryRequests);
+  const visibleProposals = filterDemo(proposals);
+  const visibleDiscussions = filterDemo(discussions);
+  const visiblePocs = filterDemo(pocs);
+  const visibleAwards = filterDemo(awards);
+  const visibleProjects = filterDemo(projects);
+  const visibleVendors = filterDemo(vendors);
+
+  const discussionsUnreadCount = visibleDiscussions.reduce((acc, thread) => {
+    const count =
+      currentRole === 'vendor'
+        ? thread.unreadByVendor || 0
+        : thread.unreadByOfficer || 0;
+    return acc + count;
+  }, 0);
+
   if (!isAuthenticated) {
     return (
       <PortalLoginPage
@@ -146,11 +252,12 @@ export function App() {
         onLoginSuccess={(user) => {
           setCurrentUser(user);
           setCurrentRole(user.role);
-          if (user.mineComplexCode) {
+          if (user.mineComplexCode && user.mineComplexCode !== 'ALL') {
             setActiveComplexCode(user.mineComplexCode);
           } else {
             setActiveComplexCode('ALL');
           }
+          setActiveTab('dashboard');
           setIsAuthenticated(true);
           loadAllData();
         }}
@@ -158,16 +265,15 @@ export function App() {
           setCurrentUser(null);
           setCurrentRole('public');
           setActiveComplexCode('ALL');
+          setActiveTab('dashboard');
           setIsAuthenticated(true);
         }}
       />
     );
   }
 
-  // 2. RENDER MAIN AUTHENTICATED ENTERPRISE WORKSPACE
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col selection:bg-blue-600 selection:text-white">
-      {/* Universal Top Bar with Mine Module Selector and Real User Account */}
       <Header
         currentRole={currentRole}
         currentUser={currentUser}
@@ -175,6 +281,7 @@ export function App() {
         setActiveTab={setActiveTab}
         activeComplexCode={activeComplexCode}
         onSelectComplex={(code) => setActiveComplexCode(code)}
+        organisationalUnits={organisationalUnits}
         onOpenAuth={(mode) => {
           setAuthInitialMode(mode || 'login');
           setAuthModalOpen(true);
@@ -183,14 +290,19 @@ export function App() {
         onOpenCreateProblem={() => setCreateProblemOpen(true)}
         notifications={notifications}
         onOpenNotifications={() => setNotificationsOpen(true)}
+        showDemoData={showDemoData}
+        onToggleDemoData={setShowDemoData}
+        hasDemoData={hasDemoData}
+        discussionsUnreadCount={discussionsUnreadCount}
       />
 
-      {/* Main Tab Router */}
+      {/* Main Content Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6">
-        {activeTab === 'home' && (
+        {(activeTab === 'home' || (activeTab === 'dashboard' && currentRole === 'public')) && (
           <LandingView
             stats={stats}
-            problemStatements={problemStatements}
+            problemStatements={visibleProblemStatements}
+            organisationalUnits={organisationalUnits}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenCreateProblem={() => setCreateProblemOpen(true)}
             onOpenRegisterVendor={() => {
@@ -207,19 +319,24 @@ export function App() {
           />
         )}
 
-        {activeTab === 'dashboard' && (
+        {activeTab === 'dashboard' && currentRole !== 'public' && (
           <ExecutiveDashboardView
             currentRole={currentRole}
             currentUser={currentUser}
             stats={stats}
-            problemStatements={problemStatements}
-            proposals={proposals}
-            projects={projects}
-            pocs={pocs}
-            awards={awards}
-            vendors={vendors}
+            organisationalUnits={organisationalUnits}
+            problemStatements={visibleProblemStatements}
+            budgetaryRequests={visibleBudgetaryRequests}
+            discussions={visibleDiscussions}
+            proposals={visibleProposals}
+            projects={visibleProjects}
+            pocs={visiblePocs}
+            awards={visibleAwards}
+            vendors={visibleVendors}
             activeComplexCode={activeComplexCode}
-            onSelectComplex={(code) => setActiveComplexCode(code)}
+            setActiveComplexCode={(code) => setActiveComplexCode(code)}
+            showDemoData={showDemoData}
+            hasDemoData={hasDemoData}
             onNavigateTab={(tab) => setActiveTab(tab)}
             onOpenCreateProblem={() => setCreateProblemOpen(true)}
             onSelectProblemStatement={(ps) => {
@@ -232,9 +349,27 @@ export function App() {
           />
         )}
 
+        {activeTab === 'mines' && (
+          <MineSelectionView
+            organisationalUnits={organisationalUnits}
+            activeComplexCode={activeComplexCode}
+            onSelectComplex={(code) => setActiveComplexCode(code)}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            problemStatements={visibleProblemStatements}
+            budgetaryRequests={visibleBudgetaryRequests}
+            proposals={visibleProposals}
+            pocs={visiblePocs}
+            awards={visibleAwards}
+            projects={visibleProjects}
+          />
+        )}
+
         {(activeTab === 'problems' || activeTab === 'challenges') && (
           <ChallengesView
-            problemStatements={problemStatements}
+            problemStatements={visibleProblemStatements}
+            organisationalUnits={organisationalUnits}
             currentRole={currentRole}
             currentUser={currentUser}
             currentVendor={currentVendorObj}
@@ -242,15 +377,95 @@ export function App() {
             onSelectComplex={(code) => setActiveComplexCode(code)}
             onOpenProposalWizard={(ps) => setSelectedPsForProposal(ps)}
             onOpenCompareMatrix={(ps) => setSelectedPsForCompare(ps)}
+            onOpenDiscussionForPs={(ps) => {
+              setPreselectedDiscussionEntity({
+                type: 'PROBLEM',
+                id: ps.id,
+                code: ps.code,
+                title: ps.title,
+                mineComplexCode: ps.mineComplexCode,
+              });
+              setActiveTab('discussions');
+            }}
             onOpenCreateChallenge={() => setCreateProblemOpen(true)}
             onRefreshData={loadAllData}
           />
         )}
 
+        {activeTab === 'budgetary' && (
+          <BudgetaryOffersView
+            budgetaryRequests={visibleBudgetaryRequests}
+            problemStatements={visibleProblemStatements}
+            proposals={visibleProposals}
+            vendors={visibleVendors}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            activeComplexCode={activeComplexCode}
+            organisationalUnits={organisationalUnits}
+            onOpenProposalForBor={(bor) => setSelectedBorForProposal(bor)}
+            onOpenDiscussionForBor={(bor) => {
+              setPreselectedDiscussionEntity({
+                type: 'BUDGETARY_REQUEST',
+                id: bor.id,
+                code: bor.requestCode,
+                title: bor.title,
+                mineComplexCode: bor.mineComplexCode,
+              });
+              setActiveTab('discussions');
+            }}
+            onRefreshData={loadAllData}
+          />
+        )}
+
+        {activeTab === 'vendors' && (
+          <VendorsView
+            vendors={visibleVendors}
+            currentRole={currentRole}
+            onOpenRegisterVendor={() => {
+              setAuthInitialMode('register-vendor');
+              setAuthModalOpen(true);
+            }}
+            onRefreshVendors={loadAllData}
+          />
+        )}
+
         {activeTab === 'proposals' && (
           <ProposalsView
-            proposals={proposals}
-            problemStatements={problemStatements}
+            proposals={visibleProposals}
+            problemStatements={visibleProblemStatements}
+            organisationalUnits={organisationalUnits}
+            mode="responses"
+            currentRole={currentRole}
+            currentUser={currentUser}
+            activeComplexCode={activeComplexCode}
+            parameters={parameters}
+            onOpenEvaluate={(p) => setSelectedProposalForEvaluation(p)}
+            onOpenCompare={(ps) => setSelectedPsForCompare(ps)}
+            onRefreshData={loadAllData}
+          />
+        )}
+
+        {activeTab === 'discussions' && (
+          <DiscussionsView
+            discussions={visibleDiscussions}
+            problemStatements={visibleProblemStatements}
+            budgetaryRequests={visibleBudgetaryRequests}
+            vendors={visibleVendors}
+            currentUser={currentUser}
+            currentRole={currentRole}
+            organisationalUnits={organisationalUnits}
+            preselectedEntity={preselectedDiscussionEntity}
+            onClearPreselected={() => setPreselectedDiscussionEntity(null)}
+            onRefreshData={loadAllData}
+          />
+        )}
+
+        {activeTab === 'evaluation' && (
+          <ProposalsView
+            proposals={visibleProposals}
+            problemStatements={visibleProblemStatements}
+            organisationalUnits={organisationalUnits}
+            mode="evaluation"
             currentRole={currentRole}
             currentUser={currentUser}
             activeComplexCode={activeComplexCode}
@@ -263,21 +478,24 @@ export function App() {
 
         {activeTab === 'pocs' && (
           <PocManagementView
+            organisationalUnits={organisationalUnits}
             currentRole={currentRole}
             currentUser={currentUser}
             activeComplexCode={activeComplexCode}
+            showDemoData={showDemoData}
             onRefreshData={loadAllData}
           />
         )}
 
         {activeTab === 'awards' && (
           <AwardsView
-            awards={awards}
+            awards={visibleAwards}
+            organisationalUnits={organisationalUnits}
             currentRole={currentRole}
             currentUser={currentUser}
             activeComplexCode={activeComplexCode}
-            problemStatements={problemStatements}
-            proposals={proposals}
+            problemStatements={visibleProblemStatements}
+            proposals={visibleProposals}
             onRefreshData={loadAllData}
             onNavigateToProjects={() => setActiveTab('projects')}
           />
@@ -285,7 +503,8 @@ export function App() {
 
         {activeTab === 'projects' && (
           <ProjectsView
-            projects={projects}
+            projects={visibleProjects}
+            organisationalUnits={organisationalUnits}
             currentRole={currentRole}
             currentUser={currentUser}
             activeComplexCode={activeComplexCode}
@@ -293,26 +512,49 @@ export function App() {
           />
         )}
 
-        {activeTab === 'vendors' && (
-          <VendorsView
-            vendors={vendors}
+        {activeTab === 'employee_master' && (
+          <EmployeeMasterView
+            currentUser={currentUser}
             currentRole={currentRole}
-            onOpenRegisterVendor={() => {
-              setAuthInitialMode('register-vendor');
-              setAuthModalOpen(true);
-            }}
-            onRefreshVendors={loadAllData}
+            organisationalUnits={organisationalUnits}
+            onRefreshData={loadAllData}
+          />
+        )}
+
+        {activeTab === 'mis_reports' && (
+          <MisReportsView
+            problemStatements={problemStatements}
+            budgetaryRequests={budgetaryRequests}
+            vendors={vendors}
+            proposals={proposals}
+            pocs={pocs}
+            awards={awards}
+            projects={projects}
+            organisationalUnits={organisationalUnits}
+            currentRole={currentRole}
+          />
+        )}
+
+        {activeTab === 'admin' && (
+          <AdministrationView
+            currentRole={currentRole}
+            organisationalUnits={organisationalUnits}
+            hasDemoData={hasDemoData}
+            onLoadDemoData={handleLoadDemoData}
+            onClearDemoData={handleClearDemoData}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onRefreshData={loadAllData}
           />
         )}
 
         {activeTab === 'analytics' && (
           <AnalyticsView
             stats={stats}
-            projects={projects}
-            problemStatements={problemStatements}
-            proposals={proposals}
-            pocs={pocs}
-            vendors={vendors}
+            projects={visibleProjects}
+            problemStatements={visibleProblemStatements}
+            proposals={visibleProposals}
+            pocs={visiblePocs}
+            vendors={visibleVendors}
             activeComplexCode={activeComplexCode}
             onNavigateToSheets={() => setActiveTab('sheets')}
           />
@@ -320,12 +562,12 @@ export function App() {
 
         {activeTab === 'reports' && (
           <ReportsView
-            problemStatements={problemStatements}
-            vendors={vendors}
-            proposals={proposals}
-            pocs={pocs}
-            awards={awards}
-            projects={projects}
+            problemStatements={visibleProblemStatements}
+            vendors={visibleVendors}
+            proposals={visibleProposals}
+            pocs={visiblePocs}
+            awards={visibleAwards}
+            projects={visibleProjects}
             currentRole={currentRole}
             currentUser={currentUser}
             activeComplexCode={activeComplexCode}
@@ -342,8 +584,8 @@ export function App() {
         {activeTab === 'sheets' && (
           <GoogleSheetsView
             ideas={[]}
-            problemStatements={problemStatements}
-            projects={projects}
+            problemStatements={visibleProblemStatements}
+            projects={visibleProjects}
             currentRole={currentRole}
             currentUser={currentUser}
             onRefreshData={loadAllData}
@@ -351,97 +593,32 @@ export function App() {
         )}
       </main>
 
-      {/* Corporate PSU Footer */}
-      <footer className="bg-white text-slate-600 text-xs border-t border-slate-200 mt-16 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="space-y-3 md:col-span-1">
-              <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
-                <span className="w-8 h-8 rounded bg-blue-700 text-white flex items-center justify-center font-bold text-sm">
-                  NMDC
-                </span>
-                <span>NMDC Limited</span>
-              </div>
-              <p className="text-slate-500 text-xs sm:text-sm leading-relaxed">
-                National Mineral Development Corporation Limited. A Navratna Public Sector Enterprise under Ministry of Steel, Government of India.
-              </p>
-              <div className="text-xs text-slate-400 font-mono">
-                CIN: L13100TG1958GOI000774 · Operational Governance Portal
-              </div>
-            </div>
-
-            <div className="space-y-2.5">
-              <h4 className="font-bold text-slate-900 uppercase tracking-wider text-xs">Corporate Office</h4>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                "Khanij Bhavan", 10-3-311/A, Castle Hills, Masab Tank, Hyderabad, Telangana 500028, India.
-              </p>
-              <p className="text-xs sm:text-sm text-slate-600">
-                Phone: +91 40 2222 1800<br />
-                Email: procurement@nmdc.co.in
-              </p>
-            </div>
-
-            <div className="space-y-2.5">
-              <h4 className="font-bold text-slate-900 uppercase tracking-wider text-xs">4 Operational Complexes</h4>
-              <ul className="space-y-1.5 text-xs text-slate-600">
-                <li>• MODULE 1: DIOM - Donimalai Iron Ore Mine</li>
-                <li>• MODULE 2: KIOM - Kumaraswamy Iron Ore Mine</li>
-                <li>• MODULE 3: BACHELI COMPLEX - Deposit 14 & 11C</li>
-                <li>• MODULE 4: KIRANDUL COMPLEX - Deposit 5 & 10</li>
-              </ul>
-            </div>
-
-            <div className="space-y-2.5">
-              <h4 className="font-bold text-slate-900 uppercase tracking-wider text-xs">Enterprise Modules</h4>
-              <ul className="space-y-1.5 text-xs text-slate-600">
-                <li>
-                  <button onClick={() => setActiveTab('problems')} className="hover:text-blue-700 transition-colors">
-                    1. Problem Statement Register
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('proposals')} className="hover:text-blue-700 transition-colors">
-                    2. Vendor Budgetary Offers & Comparative Matrix
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('pocs')} className="hover:text-blue-700 transition-colors">
-                    3. Proof of Concept (PoC) Management
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('awards')} className="hover:text-blue-700 transition-colors">
-                    4. Award of Work & Contract Register
-                  </button>
-                </li>
-                <li>
-                  <button onClick={() => setActiveTab('projects')} className="hover:text-blue-700 transition-colors">
-                    5. 12-Stage Project Execution Tracking
-                  </button>
-                </li>
-              </ul>
-            </div>
+      {/* Simple Clean Corporate Footer */}
+      <footer className="bg-white text-slate-600 text-xs border-t border-slate-200 mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/assets/aistudio/nmdc_logo_72562162.jpg"
+              alt="NMDC Limited Logo"
+              className="h-8 w-auto object-contain bg-white rounded p-0.5 border border-slate-200 shrink-0"
+            />
+            <span className="font-bold text-slate-900">NMDC Limited</span>
+            <span className="text-slate-300">·</span>
+            <span>5 Organisational Units (HO, DIOM, KIOM, Bacheli, Kirandul)</span>
           </div>
-
-          <div className="pt-8 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-            <div>
-              © 2026 NMDC Limited. All Rights Reserved. Enterprise Workflow & Project Management Platform.
-            </div>
-            <div className="flex items-center gap-4 text-slate-500">
-              <button onClick={() => setIsAuthenticated(false)} className="hover:text-slate-900 transition-colors">
-                Return to Login Page
-              </button>
-              <span>·</span>
-              <button onClick={() => setActiveTab('reports')} className="hover:text-blue-700 font-semibold transition-colors">
-                Statutory Registers
-              </button>
-            </div>
+          <div className="flex items-center gap-4 text-slate-500">
+            <button onClick={handleLogout} className="hover:text-blue-700 font-semibold transition-colors">
+              Sign In / Switch Account
+            </button>
+            <span>·</span>
+            <button onClick={() => setActiveTab('mis_reports')} className="hover:text-blue-700 font-semibold transition-colors">
+              MIS Reports
+            </button>
           </div>
         </div>
       </footer>
 
-      {/* ALL MODALS & DRAWERS */}
-      {/* 1. Auth Modal */}
+      {/* Modals & Drawers */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
@@ -449,44 +626,48 @@ export function App() {
         onLoginSuccess={(user) => {
           setCurrentUser(user);
           setCurrentRole(user.role);
-          if (user.mineComplexCode) {
+          if (user.mineComplexCode && user.mineComplexCode !== 'ALL') {
             setActiveComplexCode(user.mineComplexCode);
+          } else {
+            setActiveComplexCode('ALL');
           }
+          setActiveTab('dashboard');
           loadAllData();
         }}
       />
 
-      {/* 2. Create Problem Statement Modal (Section 6) */}
       <CreateProblemStatementModal
         isOpen={createProblemOpen}
         onClose={() => setCreateProblemOpen(false)}
         onSuccess={loadAllData}
         currentUser={currentUser}
         defaultComplexCode={activeComplexCode}
+        organisationalUnits={organisationalUnits}
       />
 
-      {/* 3. Vendor Proposal Wizard Modal (Section 10) */}
-      {selectedPsForProposal && (
+      {(selectedPsForProposal || selectedBorForProposal) && (
         <ProposalWizardModal
           isOpen={true}
-          onClose={() => setSelectedPsForProposal(null)}
+          onClose={() => {
+            setSelectedPsForProposal(null);
+            setSelectedBorForProposal(null);
+          }}
           problemStatement={selectedPsForProposal}
+          budgetaryRequest={selectedBorForProposal}
           vendor={currentVendorObj}
           onSubmitSuccess={loadAllData}
         />
       )}
 
-      {/* 4. Proposal Comparison Matrix Modal (Section 13) */}
       {selectedPsForCompare && (
         <ProposalComparisonModal
           isOpen={true}
           onClose={() => setSelectedPsForCompare(null)}
           problemStatement={selectedPsForCompare}
-          proposals={proposals}
+          proposals={visibleProposals}
         />
       )}
 
-      {/* 5. Reviewer Evaluation Modal (Section 12) */}
       {selectedProposalForEvaluation && (
         <ReviewerEvaluationModal
           isOpen={true}
@@ -498,7 +679,6 @@ export function App() {
         />
       )}
 
-      {/* 6. Notification Center */}
       <NotificationDrawer
         isOpen={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

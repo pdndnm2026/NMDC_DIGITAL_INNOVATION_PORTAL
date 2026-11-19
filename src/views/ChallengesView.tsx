@@ -1,32 +1,34 @@
 import React, { useState } from 'react';
-import { ProblemStatement, UserRole, User, Vendor, ProblemStatementStatus, MineComplexCode, AUTHORIZED_MINE_COMPLEXES } from '../types/index.js';
+import {
+  ProblemStatement,
+  UserRole,
+  User,
+  Vendor,
+  ProblemStatementStatus,
+  MineComplexCode,
+  MineComplex,
+  DEFAULT_ORGANISATIONAL_UNITS
+} from '../types/index.js';
 import { 
   Search, 
   Filter, 
   Plus, 
-  Calendar, 
-  IndianRupee, 
   Building2, 
   FileText, 
-  CheckCircle2, 
-  Clock, 
-  ArrowRight,
   ChevronRight,
   ShieldCheck,
   MessageSquare,
-  HelpCircle,
   Paperclip,
-  Check,
   X,
-  AlertTriangle,
-  Send,
-  Download,
-  MapPin
+  MapPin,
+  Video,
+  AlertCircle
 } from 'lucide-react';
 import { fetchApi } from '../utils/api.js';
 
 interface ChallengesViewProps {
   problemStatements: ProblemStatement[];
+  organisationalUnits?: MineComplex[];
   currentRole: UserRole;
   currentUser: User | null;
   currentVendor: Vendor | null;
@@ -34,12 +36,14 @@ interface ChallengesViewProps {
   onSelectComplex?: (code: MineComplexCode | 'ALL') => void;
   onOpenProposalWizard: (ps: ProblemStatement) => void;
   onOpenCompareMatrix: (ps: ProblemStatement) => void;
+  onOpenDiscussionForPs?: (ps: ProblemStatement) => void;
   onOpenCreateChallenge: () => void;
   onRefreshData?: () => void;
 }
 
 export const ChallengesView: React.FC<ChallengesViewProps> = ({
   problemStatements,
+  organisationalUnits = DEFAULT_ORGANISATIONAL_UNITS,
   currentRole,
   currentUser,
   currentVendor,
@@ -47,6 +51,7 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
   onSelectComplex,
   onOpenProposalWizard,
   onOpenCompareMatrix,
+  onOpenDiscussionForPs,
   onOpenCreateChallenge,
   onRefreshData,
 }) => {
@@ -56,6 +61,7 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedComplexFilter, setSelectedComplexFilter] = useState<string>(activeComplexCode);
   const [activeDetailPs, setActiveDetailPs] = useState<ProblemStatement | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Workflow action modal state (for Approve / Return / Reject)
   const [actionModal, setActionModal] = useState<{
@@ -180,9 +186,10 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
 
       setActionModal({ isOpen: false, ps: null, actionType: 'approve' });
       setActionRemarks('');
+      setErrorBanner(null);
       if (onRefreshData) onRefreshData();
     } catch (e: any) {
-      alert(`Workflow error: ${e.message}`);
+      setErrorBanner(`Workflow error: ${e.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -206,9 +213,10 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
       setClarificationModal({ isOpen: false, ps: null });
       setQuerySubject('');
       setQueryText('');
+      setErrorBanner(null);
       if (onRefreshData) onRefreshData();
     } catch (e: any) {
-      alert(`Error submitting query: ${e.message}`);
+      setErrorBanner(`Error submitting query: ${e.message}`);
     } finally {
       setClarificationSubmitting(false);
     }
@@ -229,13 +237,14 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
 
       setAnsweringQuery({ isOpen: false, ps: null, queryId: '' });
       setAnswerText('');
+      setErrorBanner(null);
       if (onRefreshData) onRefreshData();
     } catch (e: any) {
-      alert(`Error publishing answer: ${e.message}`);
+      setErrorBanner(`Error publishing answer: ${e.message}`);
     }
   };
 
-  const activeComplexObj = AUTHORIZED_MINE_COMPLEXES.find(c => c.code === selectedComplexFilter);
+  const activeComplexObj = organisationalUnits.find(c => c.code === selectedComplexFilter);
 
   return (
     <div className="space-y-6 pb-16">
@@ -271,7 +280,19 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
         )}
       </div>
 
-      {/* Complex Filter Pills */}
+      {errorBanner && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorBanner}</span>
+          </div>
+          <button onClick={() => setErrorBanner(null)} className="text-rose-600 hover:text-rose-800">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Organisational Unit Filter Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           onClick={() => {
@@ -285,10 +306,10 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          <span>All 4 Complexes</span>
+          <span>All 5 Units</span>
         </button>
 
-        {AUTHORIZED_MINE_COMPLEXES.map((complex) => {
+        {organisationalUnits.filter(c => c.activeStatus).map((complex) => {
           const isActive = selectedComplexFilter === complex.code;
           const count = problemStatements.filter(p => p.mineComplexCode === complex.code).length;
           return (
@@ -305,8 +326,8 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
-              <span>{complex.name}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              <span>{complex.shortLabel || complex.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
                 {count}
               </span>
             </button>
@@ -395,12 +416,19 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
                 className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between p-5 space-y-4"
               >
                 <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {ps.code}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {ps.code}
+                      </span>
+                      {ps.isDemo && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold">
+                          DEMO
+                        </span>
+                      )}
+                    </div>
                     <span
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded border shrink-0 ${
                         ps.status === 'Vendor Participation' || ps.status === 'Published'
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           : ps.status === 'Department Review' || ps.status === 'Submitted'
@@ -500,6 +528,18 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
                       >
                         <FileText className="w-3.5 h-3.5" />
                         <span>Commercial Matrix ({ps.respondedVendorsCount || 0})</span>
+                      </button>
+                    )}
+
+                    {/* Direct Clarification Discussion Link */}
+                    {onOpenDiscussionForPs && currentRole !== 'public' && (
+                      <button
+                        onClick={() => onOpenDiscussionForPs(ps)}
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                        title="Open Discussion & Clarifications Thread"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-blue-700" />
+                        <span>Discuss</span>
                       </button>
                     )}
                   </div>
@@ -651,25 +691,43 @@ export const ChallengesView: React.FC<ChallengesViewProps> = ({
                 </div>
               </div>
 
-              {/* Attachments Section */}
-              <div className="space-y-2">
+              {/* Attachments Section (Docs, Images & Site Videos) */}
+              <div className="space-y-2.5">
                 <h4 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-1.5">
-                  3. Official Technical Attachments ({activeDetailPs.attachments?.length || 0})
+                  3. Official Technical Documents &amp; Site Videos ({activeDetailPs.attachments?.length || 0})
                 </h4>
                 {activeDetailPs.attachments && activeDetailPs.attachments.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activeDetailPs.attachments.map((att, i) => (
-                      <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                        <div className="flex items-center gap-2 truncate">
-                          <Paperclip className="w-4 h-4 text-slate-400 shrink-0" />
-                          <span className="font-medium text-slate-800 truncate">{att.name}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {activeDetailPs.attachments.map((att, i) => {
+                      const isVideo = att.mediaKind === 'video' || /\.(mp4|webm|mov)$/i.test(att.name);
+                      return (
+                        <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {isVideo ? (
+                                <Video className="w-4 h-4 text-purple-700 shrink-0" />
+                              ) : (
+                                <Paperclip className="w-4 h-4 text-slate-400 shrink-0" />
+                              )}
+                              <span className="font-semibold text-slate-800 truncate">{att.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                              {att.type} · {att.size}
+                            </span>
+                          </div>
+                          {isVideo && att.url && (
+                            <video
+                              controls
+                              src={att.url}
+                              className="w-full max-h-44 rounded-lg border border-slate-200 bg-slate-950"
+                            />
+                          )}
                         </div>
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0 pl-2">{att.size}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
-                  <p className="text-slate-400 italic">No external drawings or attachments uploaded.</p>
+                  <p className="text-slate-400 italic">No external drawings, documents, or site videos uploaded.</p>
                 )}
               </div>
 
